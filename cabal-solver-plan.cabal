@@ -1,0 +1,48 @@
+cabal-version:   3.0
+name:            cabal-solver-plan
+version:         0.1.0.0
+license:         NONE
+author:          andrea@andreabedini.com
+maintainer:      Andrea Bedini
+build-type:      Simple
+extra-doc-files: CHANGELOG.md
+
+common warnings
+    ghc-options: -Wall
+
+executable cabal-solver-plan
+    import:           warnings
+    main-is:          Main.hs
+    other-modules:    SetupDeps
+                    , Solver
+                    , SourcePackage.Lens
+    build-depends:    base ^>=4.17.1.0
+                    , aeson
+                    , base
+                    , binary
+                    , bytestring
+                    , filepath
+                    , directory
+                    , Cabal
+                    , cabal-install
+                    , cabal-install-solver
+                    , Cabal-syntax
+                    , containers
+                    , data-fix
+                    , hackage-security
+                    , hackage-security
+                    , hackage-security-HTTP
+                    , microlens
+                    , monoidal-containers
+                    , mtl >= 2.3.1
+                    , network-uri
+                    , optparse-applicative
+                    , prettyprinter
+                    , recursion-schemes
+                    , semialign
+                    , tar
+                    , text
+                    , these
+                    , time
+    hs-source-dirs:   app
+    default-language: GHC2021
