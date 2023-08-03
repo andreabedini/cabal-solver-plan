@@ -15,7 +15,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Traversable (for)
 import Distribution.Client.GlobalFlags (RepoContext (..), withRepoContext')
-import Distribution.Client.IndexUtils (Index (..), getSourcePackagesAtIndexState, updateRepoIndexCache)
+import Distribution.Client.IndexUtils (Index (..), TotalIndexState, getSourcePackagesAtIndexState, updateRepoIndexCache)
 import Distribution.Client.Targets (UserConstraint)
 import Distribution.Client.Types (RemoteRepo (..), Repo (..), RepoName (..), SourcePackageDb (..), emptyRemoteRepo)
 import Distribution.InstalledPackageInfo (parseInstalledPackageInfo)
@@ -55,13 +55,14 @@ import Prelude hiding (pi)
 
 data Options = Options
   { compilerSource :: CompilerSource,
+    remoteRepos :: [RemoteRepo],
+    mTotalIndexState :: Maybe TotalIndexState,
     pkgConfigDbSources :: [PkgConfigDbSource],
     constraints :: [(UserConstraint, ConstraintSource)],
     preferences :: [PackageVersionConstraint],
     flagAssignments :: Map PackageName FlagAssignment,
     solverConfig :: SolverConfig,
     preferOldest :: PreferOldest,
-    remoteRepos :: [RemoteRepo],
     cacheDir :: FilePath,
     offline :: Bool,
     targets :: Set PackageName
@@ -74,13 +75,14 @@ opts = info (s <**> helper) fullDesc
     s =
       Options
         <$> compilerSourceParser
+        <*> many repositoryParser
+        <*> optional (parsecOption (long "index-state"))
         <*> many pkgConfigDbSourceParser
         <*> many constraintsParser
         <*> pure [] -- TODO: solverSettingPreferences
         <*> flagAssignmentParser
         <*> solverConfigParser
         <*> (PreferOldest <$> switch (long "prefer-oldest"))
-        <*> many repositoryParser
         <*> strOption (long "cache-dir" <> value "_cache")
         <*> flag False True (long "offline")
         <*> (Set.fromList <$> many (parsecArgument (metavar "TARGET")))
@@ -178,7 +180,7 @@ main = do
             _otherwise ->
               pure ()
 
-        getSourcePackagesAtIndexState Verbosity.normal repoContext Nothing Nothing
+        getSourcePackagesAtIndexState Verbosity.normal repoContext mTotalIndexState Nothing
 
   let progress =
         toProgress $
