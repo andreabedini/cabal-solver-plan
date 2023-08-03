@@ -2,9 +2,11 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 
+import Control.Monad (unless)
 import Data.ByteString qualified as BS
 import Data.Foldable (for_)
 import Data.Functor ((<&>))
+import Data.List (intercalate)
 import Data.List.NonEmpty qualified as NE
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -16,7 +18,6 @@ import Distribution.Client.GlobalFlags (RepoContext (..), withRepoContext')
 import Distribution.Client.IndexUtils (Index (..), getSourcePackagesAtIndexState, updateRepoIndexCache)
 import Distribution.Client.Targets (UserConstraint)
 import Distribution.Client.Types (RemoteRepo (..), Repo (..), RepoName (..), SourcePackageDb (..), emptyRemoteRepo)
-import Distribution.Compat.Graph (nodeKey)
 import Distribution.InstalledPackageInfo (parseInstalledPackageInfo)
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
@@ -25,13 +26,17 @@ import Distribution.Simple.GHC qualified as GHC
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import Distribution.Simple.PackageIndex qualified as Cabal.Index
 import Distribution.Simple.Program.Db (defaultProgramDb)
-import Distribution.Simple.Utils (ordNubBy)
 import Distribution.Solver.Modular (SolverConfig (..))
 import Distribution.Solver.Modular.Assignment (toCPs)
-import Distribution.Solver.Modular.ConfiguredConversion (convCP)
+import Distribution.Solver.Modular.Configured (CP (..))
+import Distribution.Solver.Modular.ConflictSet (showConflictSet)
+import Distribution.Solver.Modular.Log (SolverFailure (BackjumpLimitReached, ExhaustiveSearch))
 import Distribution.Solver.Modular.Message (showMessages)
+import Distribution.Solver.Modular.Package (showPI)
 import Distribution.Solver.Modular.RetryLog (toProgress)
+import Distribution.Solver.Types.ComponentDeps qualified as ComponentDeps
 import Distribution.Solver.Types.ConstraintSource (ConstraintSource (..))
+import Distribution.Solver.Types.OptionalStanza (showStanzas)
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb (..), readPkgConfigDb)
 import Distribution.Solver.Types.Progress (foldProgress)
 import Distribution.Solver.Types.Settings (PreferOldest (..))
@@ -46,6 +51,7 @@ import Options.Applicative
 import Solver (compute)
 import System.Directory (createDirectoryIfMissing, listDirectory)
 import System.FilePath (takeBaseName, takeExtension, (</>))
+import Prelude hiding (pi)
 
 data Options = Options
   { compilerSource :: CompilerSource,
@@ -56,8 +62,9 @@ data Options = Options
     solverConfig :: SolverConfig,
     preferOldest :: PreferOldest,
     remoteRepos :: [RemoteRepo],
-    targets :: Set PackageName,
-    cacheDir :: FilePath
+    cacheDir :: FilePath,
+    offline :: Bool,
+    targets :: Set PackageName
   }
 
 opts :: ParserInfo Options
@@ -74,30 +81,34 @@ opts = info (s <**> helper) fullDesc
         <*> solverConfigParser
         <*> (PreferOldest <$> switch (long "prefer-oldest"))
         <*> many repositoryParser
-        <*> (Set.fromList <$> many (parsecArgument (metavar "TARGET")))
         <*> strOption (long "cache-dir" <> value "_cache")
+        <*> flag False True (long "offline")
+        <*> (Set.fromList <$> many (parsecArgument (metavar "TARGET")))
 
 -- NOTE: all this it to allow users to use a shorter form for reposiotries
--- cabal requires repo-name:repo-uri but we try to make up a repo-name from its
--- uri. Also not the clearest code.
+-- cabal requires repo-name:repo-uri but we try to make up a repo-name from
+-- the uri.
+-- Also not the clearest code.
 repositoryParser :: Parser RemoteRepo
 repositoryParser = option g (long "repository")
   where
     g =
-      makeSecure
-        <$> ( str
-                >>= \s ->
-                  maybe (fail "cannot parse repository") return ((parseAbsoluteURI s >>= f) <|> simpleParsec s)
-            )
+      str >>= \s ->
+        maybe
+          (fail "cannot parse repository")
+          (return . makeSecure)
+          $ (parseAbsoluteURI s >>= guessRepoName) <|> simpleParsec s
 
-    f uri@(URI {uriScheme, uriPath})
-      | uriScheme == "file:" =
-          Just (emptyRemoteRepo (RepoName (takeBaseName uriPath))) {remoteRepoURI = uri}
-    f uri@(URI {uriScheme, uriPath, uriAuthority = Just (URIAuth {uriRegName})})
-      | null uriPath,
-        uriScheme `elem` ["http:", "https:"] =
-          Just (emptyRemoteRepo (RepoName uriRegName)) {remoteRepoURI = uri}
-    f _otherwise = Nothing
+    guessRepoName uri =
+      case uri of
+        URI {uriScheme, uriPath}
+          | uriScheme == "file:" ->
+              Just (emptyRemoteRepo (RepoName (takeBaseName uriPath))) {remoteRepoURI = uri}
+        URI {uriScheme, uriPath, uriAuthority = Just (URIAuth {uriRegName})}
+          | null uriPath,
+            uriScheme `elem` ["http:", "https:"] ->
+              Just (emptyRemoteRepo (RepoName uriRegName)) {remoteRepoURI = uri}
+        _otherwise -> Nothing
 
     makeSecure repo = repo {remoteRepoSecure = Just True}
 
@@ -151,42 +162,66 @@ main = do
     createDirectoryIfMissing True (cacheDir </> unRepoName remoteRepoName)
 
   (SourcePackageDb sourcePkgIndex sourcePkgPrefs, _tis, _ar) <-
-    withRepoContext' Verbosity.normal remoteRepos [] cacheDir Nothing (Just True) [] $ \repoContext@RepoContext {..} -> do
-      for_ repoContextRepos $ \case
-        repo@RepoSecure {repoRemote} -> do
-          repoContextWithSecureRepo repo $ \repoSecure -> do
-            updated <- Sec.uncheckClientErrors $ Sec.checkForUpdates repoSecure Nothing
-            case updated of
-              Sec.NoUpdates -> putStrLn $ "no updates for " ++ prettyShow repoRemote
-              Sec.HasUpdates -> updateRepoIndexCache Verbosity.normal (RepoIndex repoContext repo)
-        _otherwise -> pure ()
+    withRepoContext' Verbosity.normal remoteRepos [] cacheDir Nothing (Just True) [] $
+      \repoContext@RepoContext {..} -> do
+        unless offline $
+          for_ repoContextRepos $ \case
+            repo@RepoSecure {repoRemote} ->
+              repoContextWithSecureRepo repo $ \repoSecure -> do
+                updated <- Sec.uncheckClientErrors $ Sec.checkForUpdates repoSecure Nothing
+                case updated of
+                  Sec.NoUpdates ->
+                    putStrLn $ "no updates for " ++ prettyShow repoRemote
+                  Sec.HasUpdates -> do
+                    putStrLn $ "updates available for " ++ prettyShow repoRemote ++ " refreshing the cache ..."
+                    updateRepoIndexCache Verbosity.normal (RepoIndex repoContext repo)
+            _otherwise ->
+              pure ()
 
-      getSourcePackagesAtIndexState Verbosity.normal repoContext Nothing Nothing
+        getSourcePackagesAtIndexState Verbosity.normal repoContext Nothing Nothing
 
-  foldProgress
-    -- step
-    (\step rest -> putStrLn step >> rest)
-    -- fail
-    (const $ putStrLn "fail" {- FIXME -})
-    -- done
-    ( \(assignment, rdm) -> do
-        let resolverPkgs =
-              ordNubBy nodeKey $ map (convCP installedPkgIndex sourcePkgIndex) (toCPs assignment rdm)
-        for_ resolverPkgs print
-    )
-    $ showMessages
-    $ toProgress
-    $ compute
-      cinfo
-      os
-      arch
-      pkgConfigDb
-      constraints
-      preferences
-      flagAssignments
-      solverConfig
-      preferOldest
-      installedPkgIndex
-      sourcePkgIndex
-      sourcePkgPrefs
-      targets
+  let progress =
+        toProgress $
+          compute
+            cinfo
+            os
+            arch
+            pkgConfigDb
+            constraints
+            preferences
+            flagAssignments
+            solverConfig
+            preferOldest
+            installedPkgIndex
+            sourcePkgIndex
+            sourcePkgPrefs
+            targets
+
+  result <-
+    foldProgress
+      -- step
+      (\step rest -> putStrLn step >> rest)
+      -- fail
+      (return . Left)
+      -- done
+      (return . Right . uncurry toCPs)
+      (showMessages progress)
+
+  case result of
+    Left (ExhaustiveSearch cs cm) ->
+      putStrLn $
+        unlines
+          [ "Exhaustive search failed",
+            "conflict set: " ++ showConflictSet cs,
+            "conflict map: " ++ show cm
+          ]
+    Left BackjumpLimitReached ->
+      putStrLn "backjump limit reached"
+    Right cps ->
+      for_ cps $ \(CP pi flagAssignment optionalStanzaSet componentDeps) ->
+        putStrLn $
+          unlines $
+            unwords [showPI pi, prettyShow flagAssignment, showStanzas optionalStanzaSet]
+              : map
+                (\g -> prettyShow (fst (NE.head g)) ++ "\t" ++ intercalate ", " (foldMap (map showPI . snd) g))
+                (NE.groupWith fst $ ComponentDeps.toList componentDeps)
