@@ -52,7 +52,7 @@ import Distribution.Verbosity qualified as Verbosity
 import Hackage.Security.Client qualified as Sec
 import Network.URI (URI)
 import Options
-import Solver (compute)
+import SolverInterface (solve)
 import System.Directory (createDirectoryIfMissing, listDirectory)
 import System.FilePath (takeExtension, (</>))
 import Prelude hiding (pi)
@@ -85,7 +85,7 @@ main = do
 
       progress =
         toProgress $
-          compute
+          solve
             cinfo
             os
             arch
@@ -98,6 +98,7 @@ main = do
             installedPkgIndex
             sourcePkgIndex
             sourcePkgPrefs
+            extraPreInstalled
             targetsPackageName
 
   result <-

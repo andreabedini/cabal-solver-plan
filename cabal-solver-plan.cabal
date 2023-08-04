@@ -15,7 +15,7 @@ executable cabal-solver-plan
     main-is:          Main.hs
     other-modules:    SetupDeps
                     , Options
-                    , Solver
+                    , SolverInterface
                     , SourcePackage.Lens
     build-depends:    base ^>=4.17.1.0
                     , aeson

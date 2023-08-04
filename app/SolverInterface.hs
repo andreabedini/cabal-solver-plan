@@ -1,6 +1,7 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 
-module Solver where
+module SolverInterface (solve) where
 
 import Data.List (nub)
 import Data.Map (Map)
@@ -17,20 +18,22 @@ import Distribution.Client.Dependency
   )
 import Distribution.Client.Targets (UserConstraint, userToPackageConstraint)
 import Distribution.Client.Utils (incVersion)
-import Distribution.PackageDescription qualified as PD hiding (setupBuildInfo)
+import Distribution.PackageDescription qualified as PD
+import Distribution.Pretty (prettyShow)
 import Distribution.Simple as Cabal
 import Distribution.Simple.Flag qualified as Flag
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import Distribution.Simple.Utils (cabalVersion)
 import Distribution.Solver.Modular (SolverConfig)
 import Distribution.Solver.Modular.Assignment (Assignment)
-import Distribution.Solver.Modular.Dependency (RevDepMap)
-import Distribution.Solver.Modular.Index (Index)
+import Distribution.Solver.Modular.Dependency (ExposedComponent (..), RevDepMap)
+import Distribution.Solver.Modular.Index (ComponentInfo (..), Index, IsBuildable (..), IsVisible (..), PInfo (..), mkIndex)
 import Distribution.Solver.Modular.IndexConversion (convPIs)
 import Distribution.Solver.Modular.Log (SolverFailure)
 import Distribution.Solver.Modular.Message (Message)
+import Distribution.Solver.Modular.Package (I (..), Loc (..))
 import Distribution.Solver.Modular.RetryLog (RetryLog)
-import Distribution.Solver.Modular.Solver (solve)
+import Distribution.Solver.Modular.Solver qualified as Solver
 import Distribution.Solver.Types.ConstraintSource (ConstraintSource (..))
 import Distribution.Solver.Types.InstalledPreference (InstalledPreference)
 import Distribution.Solver.Types.InstalledPreference qualified as Preference
@@ -46,7 +49,7 @@ import Distribution.System (Arch, OS)
 import Distribution.Types.PackageVersionConstraint (PackageVersionConstraint (..))
 import SetupDeps (cabalPkgname)
 
-compute ::
+solve ::
   CompilerInfo ->
   OS ->
   Arch ->
@@ -59,9 +62,10 @@ compute ::
   InstalledPackageIndex ->
   PackageIndex (SourcePackage loc) ->
   Map PackageName VersionRange ->
+  [(PackageId, PD.ComponentName)] ->
   Set PackageName ->
   RetryLog Message SolverFailure (Assignment, RevDepMap)
-compute
+solve
   cinfo
   os
   arch
@@ -74,8 +78,9 @@ compute
   installedPkgIndex
   sourcePkgIndex
   sourcePkgPrefs
+  extraPreInstalled
   targets =
-    solve solverConfig cinfo idx pkgConfigDb packagePreferences gcs targets
+    Solver.solve solverConfig cinfo idx pkgConfigDb packagePreferences gcs targets
     where
       constraints :: [LabeledPackageConstraint]
       constraints = mkConstraints (compilerInfoId cinfo) solverSettingConstraints solverSettingFlagAssignments
@@ -107,16 +112,19 @@ compute
 
       idx :: Index
       idx =
-        convPIs
-          os
-          arch
-          cinfo
-          gcs
-          (ShadowPkgs False)
-          (StrongFlags False)
-          (SolveExecutables True)
-          installedPkgIndex
-          sourcePkgIndex
+        extraLibsIndex
+          <> convPIs
+            os
+            arch
+            cinfo
+            gcs
+            (ShadowPkgs False)
+            (StrongFlags False)
+            (SolveExecutables True)
+            installedPkgIndex
+            sourcePkgIndex
+
+      extraLibsIndex = mkExtraIndex extraPreInstalled
 
 mkConstraints ::
   -- | compiler
@@ -217,13 +225,6 @@ interpretPackagesPreference selected defaultPref prefs =
           | PackageStanzasPreference pkgname pref <- prefs
         ]
 
--- | Append the given package databases to an existing PackageDBStack.
--- A @Nothing@ entry will clear everything before it.
-applyPackageDbFlags :: PackageDBStack -> [Maybe PackageDB] -> PackageDBStack
-applyPackageDbFlags dbs' [] = dbs'
-applyPackageDbFlags _ (Nothing : dbs) = applyPackageDbFlags [] dbs
-applyPackageDbFlags dbs' (Just db : dbs) = applyPackageDbFlags (dbs' ++ [db]) dbs
-
 -- While we can talk to older Cabal versions (we need to be able to
 -- do so for custom Setup scripts that require older Cabal lib
 -- versions), we have problems talking to some older versions that
@@ -298,3 +299,22 @@ setupMinCabalVersion (CompilerId flavor version) =
 setupMaxCabalVersion :: Version
 setupMaxCabalVersion =
   alterVersion (take 2) $ incVersion 1 $ incVersion 1 cabalVersion
+
+-- | Create a solver index from package identifiers and library names
+mkExtraIndex :: [(PackageIdentifier, PD.ComponentName)] -> Index
+mkExtraIndex libs =
+  mkIndex
+    [ (pn, I pv loc, mkPInfo cname)
+      | (PackageIdentifier pn pv, cname) <- libs,
+        let loc = Inst $ mkUnitId (prettyShow pn)
+    ]
+  where
+    defaultComponentInfo =
+      ComponentInfo {compIsVisible = IsVisible True, compIsBuildable = IsBuildable True}
+    mkPInfo = \case
+      PD.CLibName name ->
+        PInfo mempty (Map.singleton (ExposedLib name) defaultComponentInfo) mempty Nothing
+      PD.CExeName name ->
+        PInfo mempty (Map.singleton (ExposedExe name) defaultComponentInfo) mempty Nothing
+      otherComponentName ->
+        error $ "component " ++ prettyShow otherComponentName ++ " not supported as preinstalled"

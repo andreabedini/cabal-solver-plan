@@ -10,12 +10,19 @@ where
 
 import Data.Map (Map)
 import Data.Map qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.String (fromString)
 import Distribution.Client.IndexUtils.IndexState
 import Distribution.Client.Targets
 import Distribution.Client.Types.Repo
 import Distribution.Compat.CharParsing qualified as P
-import Distribution.PackageDescription (PkgconfigVersion, parsecFlagAssignmentNonEmpty)
+import Distribution.PackageDescription
+  ( ComponentName (..),
+    LibraryName (..),
+    PackageId,
+    PkgconfigVersion,
+    parsecFlagAssignmentNonEmpty,
+  )
 import Distribution.Parsec qualified as Parsec
 import Distribution.Simple (AbiTag (..), CompilerInfo (..), PackageDB (..), PackageDBStack, PackageName, PkgconfigName)
 import Distribution.Solver.Modular (PruneAfterFirstSuccess (..), SolverConfig (..))
@@ -63,6 +70,7 @@ import Text.Read (readMaybe)
 -- aeson-2.2.0.0 as target.
 data Options = Options
   { compilerSource :: CompilerSource,
+    extraPreInstalled :: [(PackageId, ComponentName)],
     repositories :: [Either URI RemoteRepo],
     mTotalIndexState :: Maybe TotalIndexState,
     pkgConfigDbSources :: [PkgConfigDbSource],
@@ -86,6 +94,7 @@ opts = info (s <**> helper) fullDesc
     s =
       Options
         <$> compilerSourceParser
+        <*> many extraPreInstalledParser
         <*> many repositoryParser
         <*> optional (parsecOption (long "index-state"))
         <*> many pkgConfigDbSourceParser
@@ -97,6 +106,14 @@ opts = info (s <**> helper) fullDesc
         <*> strOption (long "cache-dir" <> value "_cache")
         <*> flag False True (long "offline")
         <*> many (parsecArgument (metavar "TARGET"))
+
+extraPreInstalledParser :: Parser (PackageId, ComponentName)
+extraPreInstalledParser = parsecOptionWith g (long "with-preinstalled")
+  where
+    g = do
+      pkgId <- Parsec.parsec
+      libName <- optional (P.string ":" *> Parsec.parsec)
+      return (pkgId, fromMaybe (CLibName LMainLibName) libName)
 
 -- NOTE: all this it to allow users to use a shorter form for reposiotries
 -- cabal requires repo-name:repo-uri but we try to make up a repo-name
@@ -137,10 +154,10 @@ compilerSourceParser =
     osParser = parsecOption (long "os" <> metavar "OS" <> value buildOS)
     archParser = parsecOption (long "arch" <> metavar "ARCH" <> value buildArch)
 
-parsePackageDb :: String -> PackageDB
-parsePackageDb "global" = GlobalPackageDB
-parsePackageDb "user" = UserPackageDB
-parsePackageDb other = SpecificPackageDB other
+    parsePackageDb :: String -> PackageDB
+    parsePackageDb "global" = GlobalPackageDB
+    parsePackageDb "user" = UserPackageDB
+    parsePackageDb other = SpecificPackageDB other
 
 data PkgConfigDbSource
   = PkgConfigDbEntry PkgconfigName (Maybe PkgconfigVersion)
