@@ -1,15 +1,24 @@
 {-# LANGUAGE LambdaCase #-}
 
-module Options where
+module Options
+  ( parseOptions,
+    Options (..),
+    CompilerSource (..),
+    PkgConfigDbSource (..),
+  )
+where
 
 import Data.Map (Map)
 import Data.Map qualified as Map
+import Data.String (fromString)
+import Distribution.Client.IndexUtils.IndexState
+import Distribution.Client.Targets
+import Distribution.Client.Types.Repo
 import Distribution.Compat.CharParsing qualified as P
 import Distribution.PackageDescription (PkgconfigVersion, parsecFlagAssignmentNonEmpty)
 import Distribution.Parsec qualified as Parsec
 import Distribution.Simple (AbiTag (..), CompilerInfo (..), PackageDB (..), PackageDBStack, PackageName, PkgconfigName)
 import Distribution.Solver.Modular (PruneAfterFirstSuccess (..), SolverConfig (..))
-import Distribution.Solver.Types.ConstraintSource (ConstraintSource (..))
 import Distribution.Solver.Types.Settings
   ( AllowBootLibInstalls (..),
     AvoidReinstalls (..),
@@ -19,29 +28,97 @@ import Distribution.Solver.Types.Settings
     IndependentGoals (..),
     MinimizeConflictSet (..),
     OnlyConstrained (..),
+    PreferOldest (..),
     ReorderGoals (..),
     ShadowPkgs (..),
     SolveExecutables (..),
     StrongFlags (..),
   )
-import Distribution.System (Arch, OS)
+import Distribution.System (Arch, OS, buildArch, buildOS)
 import Distribution.Types.Flag (FlagAssignment)
+import Distribution.Types.PackageVersionConstraint
 import Distribution.Verbosity qualified as Verbosity
+import Network.URI (URI (..), parseAbsoluteURI)
 import Options.Applicative
 import Text.Read (readMaybe)
 
+-- | These are the options of the command line tool. They roughlty
+-- correspond to the inputs required by the solver but there are some
+-- deviations. There are few reasons to do this:
+--
+-- - Some inputs are impossible to express on the command line. E.g. the
+-- list of source packages or pkgconfig entries. In this case I added
+-- options to fetch these inputs in different forms (more or less pure).
+--
+-- - Some inputs are not independent. E.g. the global installed package
+-- database should be provided by GHC (if it is available). In this case
+-- I provide alternative set of options so that the user can only provide
+-- sensible combinations (e.g. you cannot say --packagedb=global if GHC
+-- is not installed).
+--
+-- - On last reason is simply convenience. E.g. the solver targets are
+-- package names. So to find a plan for e.g. aeson-2.2.0.0, one would have
+-- to give "aeson" as a target and "aeson == 2.2.0.0" as a constraint. I
+-- adapted the command line options so that the user can specify directly
+-- aeson-2.2.0.0 as target.
+data Options = Options
+  { compilerSource :: CompilerSource,
+    repositories :: [Either URI RemoteRepo],
+    mTotalIndexState :: Maybe TotalIndexState,
+    pkgConfigDbSources :: [PkgConfigDbSource],
+    constraints :: [UserConstraint],
+    preferences :: [PackageVersionConstraint],
+    flagAssignments :: Map PackageName FlagAssignment,
+    solverConfig :: SolverConfig,
+    preferOldest :: PreferOldest,
+    cacheDir :: FilePath,
+    offline :: Bool,
+    targets :: [PackageVersionConstraint]
+  }
+
+parseOptions :: IO Options
+parseOptions = execParser opts
+
+opts :: ParserInfo Options
+opts = info (s <**> helper) fullDesc
+  where
+    s :: Parser Options
+    s =
+      Options
+        <$> compilerSourceParser
+        <*> many repositoryParser
+        <*> optional (parsecOption (long "index-state"))
+        <*> many pkgConfigDbSourceParser
+        <*> many (parsecOption (long "constraint"))
+        <*> pure [] -- TODO: solverSettingPreferences
+        <*> flagAssignmentParser
+        <*> solverConfigParser
+        <*> (PreferOldest <$> switch (long "prefer-oldest"))
+        <*> strOption (long "cache-dir" <> value "_cache")
+        <*> flag False True (long "offline")
+        <*> many (parsecArgument (metavar "TARGET"))
+
+-- NOTE: all this it to allow users to use a shorter form for reposiotries
+-- cabal requires repo-name:repo-uri but we try to make up a repo-name
+-- from the uri. Also not the clearest code.
+repositoryParser :: Parser (Either URI RemoteRepo)
+repositoryParser = option g (long "repository")
+  where
+    g =
+      asum
+        [ Left <$> maybeReader parseAbsoluteURI,
+          Right <$> eitherReader Parsec.eitherParsec
+        ]
+
 data CompilerSource
   = CompilerInline CompilerInfo OS Arch [FilePath]
-  | CompilerFromCompiler (Maybe FilePath) PackageDBStack
+  | CompilerFromSystem (Maybe FilePath) PackageDBStack
 
 compilerSourceParser :: Parser CompilerSource
 compilerSourceParser =
   asum
-    [ CompilerFromCompiler Nothing
-        <$ flag' () (long "with-system-ghc")
-        <*> many (option (parsePackageDb <$> str) (long "package-db" <> metavar "GLOBAL|USER|PATH")),
-      CompilerFromCompiler . Just
-        <$> strOption (long "with-ghc")
+    [ CompilerFromSystem
+        <$> optArg "with-ghc" "GHC" str
         <*> many (option (parsePackageDb <$> str) (long "package-db" <> metavar "GLOBAL|USER|PATH")),
       CompilerInline
         <$> compilerInfoParser
@@ -57,8 +134,8 @@ compilerSourceParser =
         <*> optional (some (parsecOption (long "compiler-id-compat")))
         <*> optional (some (parsecOption (long "language")))
         <*> optional (some (parsecOption (long "extension")))
-    osParser = parsecOption (long "os" <> metavar "OS")
-    archParser = parsecOption (long "arch" <> metavar "ARCH")
+    osParser = parsecOption (long "os" <> metavar "OS" <> value buildOS)
+    archParser = parsecOption (long "arch" <> metavar "ARCH" <> value buildArch)
 
 parsePackageDb :: String -> PackageDB
 parsePackageDb "global" = GlobalPackageDB
@@ -67,13 +144,13 @@ parsePackageDb other = SpecificPackageDB other
 
 data PkgConfigDbSource
   = PkgConfigDbEntry PkgconfigName (Maybe PkgconfigVersion)
-  | PkgConfigDbSystem
+  | PkgConfigDbFromSystem
 
 pkgConfigDbSourceParser :: Parser PkgConfigDbSource
 pkgConfigDbSourceParser =
   asum
     [ parsecOptionWith entryParser (long "pkgconfig-entry"),
-      flag' PkgConfigDbSystem (long "use-system-pkgconfig")
+      flag' PkgConfigDbFromSystem (long "use-system-pkgconfig")
     ]
   where
     entryParser = do
@@ -125,3 +202,9 @@ parsecOptionWith parser = option (eitherReader (Parsec.explicitEitherParsec pars
 
 parsecArgument :: (Parsec.Parsec a) => Mod ArgumentFields a -> Parser a
 parsecArgument = argument (eitherReader Parsec.eitherParsec)
+
+-- https://github.com/pcapriotti/optparse-applicative/issues/243#issuecomment-653924318
+optArg :: String -> String -> ReadM a -> Parser (Maybe a)
+optArg x meta rdr =
+  flag' Nothing (long x <> style (<> fromString ("[=" <> meta <> "]")))
+    <|> option (Just <$> rdr) (long x <> internal)
