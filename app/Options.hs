@@ -141,7 +141,7 @@ compilerSourceParser =
         <$> compilerInfoParser
         <*> osParser
         <*> archParser
-        <*> many (strOption (long "package-db" <> metavar "PATH"))
+        <*> many (strOption (long "package-db-dir" <> metavar "PATH"))
     ]
   where
     compilerInfoParser =
