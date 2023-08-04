@@ -4,7 +4,6 @@ module Options where
 
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Distribution.Client.Targets (UserConstraint)
 import Distribution.Compat.CharParsing qualified as P
 import Distribution.PackageDescription (PkgconfigVersion, parsecFlagAssignmentNonEmpty)
 import Distribution.Parsec qualified as Parsec
@@ -111,10 +110,6 @@ onlyConstrainedParser =
         "none" -> pure OnlyConstrainedNone
         "all" -> pure OnlyConstrainedAll
         _ -> fail "bad only-constrainted"
-
-constraintsParser :: Parser (UserConstraint, ConstraintSource)
-constraintsParser =
-  (,ConstraintSourceCommandlineFlag) <$> parsecOption (long "constraint")
 
 flagAssignmentParser :: Parser (Map PackageName FlagAssignment)
 flagAssignmentParser =

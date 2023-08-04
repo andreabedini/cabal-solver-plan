@@ -2,44 +2,48 @@
 
 module Solver where
 
-import Control.Monad.Writer.CPS (MonadWriter (..), execWriter)
-import Data.Foldable
 import Data.List (nub)
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Distribution.Client.Dependency hiding (removeLowerBounds, removeUpperBounds)
+import Distribution.Client.Dependency
+  ( PackageConstraint (..),
+    PackagePreference (..),
+    PackageProperty (..),
+    PackagesPreferenceDefault (..),
+    scopeToplevel,
+  )
 import Distribution.Client.Targets (UserConstraint, userToPackageConstraint)
 import Distribution.Client.Utils (incVersion)
 import Distribution.PackageDescription qualified as PD hiding (setupBuildInfo)
-import Distribution.Simple as Cabal hiding (installedUnitId)
+import Distribution.Simple as Cabal
 import Distribution.Simple.Flag qualified as Flag
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import Distribution.Simple.Utils (cabalVersion)
-import Distribution.Solver.Modular
-import Distribution.Solver.Modular.Assignment
-import Distribution.Solver.Modular.Dependency
-import Distribution.Solver.Modular.Index
-import Distribution.Solver.Modular.IndexConversion
-import Distribution.Solver.Modular.Log
-import Distribution.Solver.Modular.Message
+import Distribution.Solver.Modular (SolverConfig)
+import Distribution.Solver.Modular.Assignment (Assignment)
+import Distribution.Solver.Modular.Dependency (RevDepMap)
+import Distribution.Solver.Modular.Index (Index)
+import Distribution.Solver.Modular.IndexConversion (convPIs)
+import Distribution.Solver.Modular.Log (SolverFailure)
+import Distribution.Solver.Modular.Message (Message)
 import Distribution.Solver.Modular.RetryLog (RetryLog)
 import Distribution.Solver.Modular.Solver (solve)
-import Distribution.Solver.Types.ConstraintSource
-import Distribution.Solver.Types.InstalledPreference
+import Distribution.Solver.Types.ConstraintSource (ConstraintSource (..))
+import Distribution.Solver.Types.InstalledPreference (InstalledPreference)
 import Distribution.Solver.Types.InstalledPreference qualified as Preference
-import Distribution.Solver.Types.LabeledPackageConstraint
-import Distribution.Solver.Types.OptionalStanza
+import Distribution.Solver.Types.LabeledPackageConstraint (LabeledPackageConstraint (..))
+import Distribution.Solver.Types.OptionalStanza (OptionalStanza)
 import Distribution.Solver.Types.PackageConstraint (ConstraintScope (..), scopeToPackageName)
 import Distribution.Solver.Types.PackageIndex (PackageIndex)
-import Distribution.Solver.Types.PackagePreferences
+import Distribution.Solver.Types.PackagePreferences (PackagePreferences (..))
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb)
-import Distribution.Solver.Types.Settings
+import Distribution.Solver.Types.Settings (PreferOldest, ShadowPkgs (..), SolveExecutables (..), StrongFlags (..))
 import Distribution.Solver.Types.SourcePackage (SourcePackage)
 import Distribution.System (Arch, OS)
-import Distribution.Types.PackageVersionConstraint
+import Distribution.Types.PackageVersionConstraint (PackageVersionConstraint (..))
 import SetupDeps (cabalPkgname)
 
 compute ::
@@ -47,7 +51,7 @@ compute ::
   OS ->
   Arch ->
   PkgConfigDb ->
-  [(UserConstraint, ConstraintSource)] ->
+  [UserConstraint] ->
   [PackageVersionConstraint] ->
   Map PackageName PD.FlagAssignment ->
   SolverConfig ->
@@ -118,36 +122,31 @@ mkConstraints ::
   -- | compiler
   CompilerId ->
   -- | ssConstraints
-  [(UserConstraint, ConstraintSource)] ->
+  [UserConstraint] ->
   -- | ssFlagAssignments (?)
   Map.Map PackageName PD.FlagAssignment ->
   -- | result
   [LabeledPackageConstraint]
 mkConstraints compilerId ssConstraints ssFlagAssignments =
-  execWriter $ do
-    tell
-      [ LabeledPackageConstraint
+  concat
+    [ [ LabeledPackageConstraint
           (PackageConstraint (ScopeAnySetupQualifier cabalPkgname) (PackagePropertyVersion $ orLaterVersion $ setupMinCabalVersion compilerId))
-          ConstraintSetupCabalMinVersion
-      ]
-
-    tell
-      [ LabeledPackageConstraint
+          ConstraintSetupCabalMinVersion,
+        LabeledPackageConstraint
           (PackageConstraint (ScopeAnySetupQualifier cabalPkgname) (PackagePropertyVersion $ earlierVersion setupMaxCabalVersion))
           ConstraintSetupCabalMaxVersion
+      ],
+      [ LabeledPackageConstraint
+          (userToPackageConstraint pc)
+          ConstraintSourceCommandlineFlag
+        | pc <- ssConstraints
+      ],
+      [ LabeledPackageConstraint
+          (PackageConstraint (scopeToplevel pn) (PackagePropertyFlags flags))
+          ConstraintSourceCommandlineFlag
+        | (pn, flags) <- Map.toList ssFlagAssignments
       ]
-
-    -- version constraints from the config file or command line
-    for_ ssConstraints $ \(pc, src) ->
-      tell [LabeledPackageConstraint (userToPackageConstraint pc) src]
-
-    -- TODO: [nice to have] should have checked at some point that the package in question actually has these flags.
-    for_ (Map.toList ssFlagAssignments) $ \(pkgname, flags) ->
-      tell
-        [ LabeledPackageConstraint
-            (PackageConstraint (scopeToplevel pkgname) (PackagePropertyFlags flags))
-            ConstraintSourceConfigFlagOrTarget
-        ]
+    ]
 
 mkPreferences ::
   -- | sourcePkgPrefs

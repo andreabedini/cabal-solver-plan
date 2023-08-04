@@ -35,7 +35,6 @@ executable cabal-solver-plan
                     , hackage-security-HTTP
                     , microlens
                     , monoidal-containers
-                    , mtl >= 2.3.1
                     , network-uri
                     , optparse-applicative
                     , prettyprinter

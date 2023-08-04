@@ -11,7 +11,6 @@ import Data.List.NonEmpty qualified as NE
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
-import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Traversable (for)
 import Distribution.Client.GlobalFlags (RepoContext (..), withRepoContext')
@@ -35,14 +34,13 @@ import Distribution.Solver.Modular.Message (showMessages)
 import Distribution.Solver.Modular.Package (showPI)
 import Distribution.Solver.Modular.RetryLog (toProgress)
 import Distribution.Solver.Types.ComponentDeps qualified as ComponentDeps
-import Distribution.Solver.Types.ConstraintSource (ConstraintSource (..))
 import Distribution.Solver.Types.OptionalStanza (showStanzas)
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb (..), readPkgConfigDb)
 import Distribution.Solver.Types.Progress (foldProgress)
 import Distribution.Solver.Types.Settings (PreferOldest (..))
 import Distribution.System (Platform (..), buildArch, buildOS)
 import Distribution.Types.Flag (FlagAssignment)
-import Distribution.Types.PackageVersionConstraint (PackageVersionConstraint)
+import Distribution.Types.PackageVersionConstraint (PackageVersionConstraint (PackageVersionConstraint))
 import Distribution.Verbosity qualified as Verbosity
 import Hackage.Security.Client qualified as Sec
 import Network.URI (URI (..), URIAuth (..), parseAbsoluteURI)
@@ -58,14 +56,14 @@ data Options = Options
     remoteRepos :: [RemoteRepo],
     mTotalIndexState :: Maybe TotalIndexState,
     pkgConfigDbSources :: [PkgConfigDbSource],
-    constraints :: [(UserConstraint, ConstraintSource)],
+    constraints :: [UserConstraint],
     preferences :: [PackageVersionConstraint],
     flagAssignments :: Map PackageName FlagAssignment,
     solverConfig :: SolverConfig,
     preferOldest :: PreferOldest,
     cacheDir :: FilePath,
     offline :: Bool,
-    targets :: Set PackageName
+    targets :: [PackageVersionConstraint]
   }
 
 opts :: ParserInfo Options
@@ -78,14 +76,14 @@ opts = info (s <**> helper) fullDesc
         <*> many repositoryParser
         <*> optional (parsecOption (long "index-state"))
         <*> many pkgConfigDbSourceParser
-        <*> many constraintsParser
+        <*> many (parsecOption (long "constraint"))
         <*> pure [] -- TODO: solverSettingPreferences
         <*> flagAssignmentParser
         <*> solverConfigParser
         <*> (PreferOldest <$> switch (long "prefer-oldest"))
         <*> strOption (long "cache-dir" <> value "_cache")
         <*> flag False True (long "offline")
-        <*> (Set.fromList <$> many (parsecArgument (metavar "TARGET")))
+        <*> many (parsecArgument (metavar "TARGET"))
 
 -- NOTE: all this it to allow users to use a shorter form for reposiotries
 -- cabal requires repo-name:repo-uri but we try to make up a repo-name from
@@ -182,7 +180,9 @@ main = do
 
         getSourcePackagesAtIndexState Verbosity.normal repoContext mTotalIndexState Nothing
 
-  let progress =
+  let targetsPackageName = Set.fromList [pn | PackageVersionConstraint pn _ <- targets]
+
+      progress =
         toProgress $
           compute
             cinfo
@@ -197,7 +197,7 @@ main = do
             installedPkgIndex
             sourcePkgIndex
             sourcePkgPrefs
-            targets
+            targetsPackageName
 
   result <-
     foldProgress
