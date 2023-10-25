@@ -1,33 +1,36 @@
 {-# LANGUAGE LambdaCase #-}
 
-module Options
-  ( parseOptions,
+module Options (
+    parseOptions,
     Options (..),
     CompilerSource (..),
     PkgConfigDbSource (..),
-  )
+)
 where
 
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
-import Data.String (fromString)
 import Distribution.Client.IndexUtils.IndexState
+import Distribution.Client.Setup (defaultMaxBackjumps)
 import Distribution.Client.Targets
 import Distribution.Client.Types.Repo
 import Distribution.Compat.CharParsing qualified as P
-import Distribution.PackageDescription
-  ( ComponentName (..),
+import Distribution.PackageDescription (
+    ComponentName (..),
     LibraryName (..),
     PackageId,
     PkgconfigVersion,
     parsecFlagAssignmentNonEmpty,
-  )
+ )
+import Distribution.Parsec (Parsec (parsec))
+import Distribution.Parsec qualified as Cabal
 import Distribution.Parsec qualified as Parsec
+import Distribution.Pretty qualified as Cabal
 import Distribution.Simple (AbiTag (..), CompilerInfo (..), PackageDB (..), PackageDBStack, PackageName, PkgconfigName)
 import Distribution.Solver.Modular (PruneAfterFirstSuccess (..), SolverConfig (..))
-import Distribution.Solver.Types.Settings
-  ( AllowBootLibInstalls (..),
+import Distribution.Solver.Types.Settings (
+    AllowBootLibInstalls (..),
     AvoidReinstalls (..),
     CountConflicts (..),
     EnableBackjumping (..),
@@ -40,8 +43,8 @@ import Distribution.Solver.Types.Settings
     ShadowPkgs (..),
     SolveExecutables (..),
     StrongFlags (..),
-  )
-import Distribution.System (Arch, OS, buildArch, buildOS)
+ )
+import Distribution.System (Platform, buildPlatform)
 import Distribution.Types.Flag (FlagAssignment)
 import Distribution.Types.PackageVersionConstraint
 import Distribution.Verbosity qualified as Verbosity
@@ -69,145 +72,270 @@ import Text.Read (readMaybe)
 -- adapted the command line options so that the user can specify directly
 -- aeson-2.2.0.0 as target.
 data Options = Options
-  { compilerSource :: CompilerSource,
-    extraPreInstalled :: [(PackageId, ComponentName)],
-    repositories :: [Either URI RemoteRepo],
-    mTotalIndexState :: Maybe TotalIndexState,
-    pkgConfigDbSources :: [PkgConfigDbSource],
-    constraints :: [UserConstraint],
-    preferences :: [PackageVersionConstraint],
-    flagAssignments :: Map PackageName FlagAssignment,
-    solverConfig :: SolverConfig,
-    preferOldest :: PreferOldest,
-    cacheDir :: FilePath,
-    offline :: Bool,
-    targets :: [PackageVersionConstraint]
-  }
+    { compilerSource :: CompilerSource
+    , extraPreInstalled :: [(PackageId, ComponentName)]
+    , repositories :: [Either URI RemoteRepo]
+    , mTotalIndexState :: Maybe TotalIndexState
+    , pkgConfigDbSources :: [PkgConfigDbSource]
+    , constraints :: [UserConstraint]
+    , preferences :: [PackageVersionConstraint]
+    , flagAssignments :: Map PackageName FlagAssignment
+    , solverConfig :: SolverConfig
+    , preferOldest :: PreferOldest
+    , cacheDir :: FilePath
+    , offline :: Bool
+    , targets :: [PackageVersionConstraint]
+    }
 
 parseOptions :: IO Options
 parseOptions = execParser opts
 
 opts :: ParserInfo Options
-opts = info (s <**> helper) fullDesc
+opts = info (s <**> helper) mods
   where
     s :: Parser Options
     s =
-      Options
-        <$> compilerSourceParser
-        <*> many extraPreInstalledParser
-        <*> many repositoryParser
-        <*> optional (parsecOption (long "index-state"))
-        <*> many pkgConfigDbSourceParser
-        <*> many (parsecOption (long "constraint"))
-        <*> pure [] -- TODO: solverSettingPreferences
-        <*> flagAssignmentParser
-        <*> solverConfigParser
-        <*> (PreferOldest <$> switch (long "prefer-oldest"))
-        <*> strOption (long "cache-dir" <> value "_cache")
-        <*> flag False True (long "offline")
-        <*> many (parsecArgument (metavar "TARGET"))
+        Options
+            <$> compilerSourceParser
+            <*> many extraPreInstalledParser
+            <*> many repositoryParser
+            <*> optional (parsecOption (long "index-state"))
+            <*> many pkgConfigDbSourceParser
+            <*> many (parsecOption (long "constraint"))
+            <*> pure [] -- TODO: solverSettingPreferences
+            <*> flagAssignmentParser
+            <*> solverConfigParser
+            <*> (PreferOldest <$> switch (long "prefer-oldest"))
+            <*> strOption (long "cache-dir" <> value "_cache")
+            <*> flag False True (long "offline")
+            <*> many (parsecArgument (metavar "TARGET"))
+
+    mods =
+        mconcat
+            [ fullDesc
+            , header "header"
+            , footer "footer"
+            , progDesc "progDesc"
+            ]
 
 extraPreInstalledParser :: Parser (PackageId, ComponentName)
 extraPreInstalledParser = parsecOptionWith g (long "with-preinstalled")
   where
     g = do
-      pkgId <- Parsec.parsec
-      libName <- optional (P.string ":" *> Parsec.parsec)
-      return (pkgId, fromMaybe (CLibName LMainLibName) libName)
+        pkgId <- Parsec.parsec
+        libName <- optional (P.string ":" *> Parsec.parsec)
+        return (pkgId, fromMaybe (CLibName LMainLibName) libName)
 
--- NOTE: all this it to allow users to use a shorter form for reposiotries
+-- NOTE: all this it to allow users to use a shorter form for repositories
 -- cabal requires repo-name:repo-uri but we try to make up a repo-name
 -- from the uri. Also not the clearest code.
 repositoryParser :: Parser (Either URI RemoteRepo)
 repositoryParser = option g (long "repository")
   where
-    g =
-      asum
-        [ Left <$> maybeReader parseAbsoluteURI,
-          Right <$> eitherReader Parsec.eitherParsec
-        ]
+    g = Left <$> maybeReader parseAbsoluteURI <|> Right <$> eitherReader Parsec.eitherParsec
 
 data CompilerSource
-  = CompilerInline CompilerInfo OS Arch [FilePath]
-  | CompilerFromSystem (Maybe FilePath) PackageDBStack
+    = CompilerInline CompilerInfo Platform [FilePath]
+    | CompilerFromSystem FilePath PackageDBStack
 
 compilerSourceParser :: Parser CompilerSource
 compilerSourceParser =
-  asum
-    [ CompilerFromSystem
-        <$> optArg "with-ghc" "GHC" str
-        <*> many (option (parsePackageDb <$> str) (long "package-db" <> metavar "GLOBAL|USER|PATH")),
-      CompilerInline
-        <$> compilerInfoParser
-        <*> osParser
-        <*> archParser
-        <*> many (strOption (long "package-db-dir" <> metavar "PATH"))
-    ]
+    compilerFromSystem <|> compilerInline
   where
-    compilerInfoParser =
-      CompilerInfo
-        <$> parsecOption (long "compiler-id")
-        <*> parsecOption (long "abi-tag" <> value NoAbiTag)
-        <*> optional (some (parsecOption (long "compiler-id-compat")))
-        <*> optional (some (parsecOption (long "language")))
-        <*> optional (some (parsecOption (long "extension")))
-    osParser = parsecOption (long "os" <> metavar "OS" <> value buildOS)
-    archParser = parsecOption (long "arch" <> metavar "ARCH" <> value buildArch)
+    compilerFromSystem =
+        CompilerFromSystem
+            <$> strOption
+                ( long "with-ghc"
+                    <> help "Use an installed compiler available at PATH."
+                    <> metavar "PATH"
+                    <> value "ghc"
+                    <> showDefault
+                )
+            <*> many
+                ( option
+                    readPackageDb
+                    ( long "package-db"
+                        <> help "Package database of pre-installed packages."
+                        <> metavar "GLOBAL|USER|PATH"
+                    )
+                )
 
-    parsePackageDb :: String -> PackageDB
-    parsePackageDb "global" = GlobalPackageDB
-    parsePackageDb "user" = UserPackageDB
-    parsePackageDb other = SpecificPackageDB other
+    compilerInline =
+        CompilerInline
+            <$> compilerInfoOption
+            <*> platformOption
+            <*> many (strOption (long "package-db-dir" <> metavar "PATH"))
+
+    compilerInfoOption =
+        CompilerInfo
+            <$> parsecOption
+                ( long "compiler-id"
+                    <> help "Compiler flavour and version. E.g \"ghc-9.4.7\"."
+                    <> metavar "COMPILER-ID"
+                )
+            <*> parsecOption
+                ( long "abi-tag"
+                    <> help "Tag for distinguishing incompatible ABI's on the same architecture/os."
+                    <> metavar "ABI-TAG"
+                    <> value NoAbiTag
+                    <> showDefaultWith (const "no tag")
+                )
+            <*> optional
+                ( unCommaSeparated
+                    <$> parsecOption
+                        ( long "compiler-id-compat"
+                            <> help "Other implementations that this compiler claims to be compatible with, if known."
+                            <> metavar "COMPILER-ID"
+                        )
+                )
+            <*> optional
+                ( unCommaSeparated
+                    <$> parsecOption
+                        ( long "supported-language"
+                            <> help "Supported language standards, if known. If no language standard is specified the solver assumes any standard is supported."
+                            <> metavar "LANGUAGE"
+                        )
+                )
+            <*> optional
+                ( unCommaSeparated
+                    <$> parsecOption
+                        ( long "supported-extension"
+                            <> help "Supported extensions, if known. If no extension is specified the solver assumes any extension is supported."
+                            <> metavar "EXTENSION"
+                        )
+                )
+
+    platformOption =
+        parsecOption
+            ( long "platform"
+                <> help "The desired platform for the build plan."
+                <> metavar "PLATFORM"
+                <> value buildPlatform
+                <> showDefaultWith Cabal.prettyShow
+            )
+
+    readPackageDb :: ReadM PackageDB
+    readPackageDb =
+        str >>= \case
+            "global" -> return GlobalPackageDB
+            "user" -> return UserPackageDB
+            path -> return $ SpecificPackageDB path
 
 data PkgConfigDbSource
-  = PkgConfigDbEntry PkgconfigName (Maybe PkgconfigVersion)
-  | PkgConfigDbFromSystem
+    = PkgConfigDbEntry PkgconfigName (Maybe PkgconfigVersion)
+    | PkgConfigDbFromSystem
 
 pkgConfigDbSourceParser :: Parser PkgConfigDbSource
 pkgConfigDbSourceParser =
-  asum
-    [ parsecOptionWith entryParser (long "pkgconfig-entry"),
-      flag' PkgConfigDbFromSystem (long "use-system-pkgconfig")
-    ]
+    asum
+        [ parsecOptionWith entryParser (long "pkgconfig-entry")
+        , flag' PkgConfigDbFromSystem (long "use-system-pkgconfig")
+        ]
   where
     entryParser = do
-      pkgName <- Parsec.parsec
-      pkgVersion <- optional (P.string "=" *> Parsec.parsec)
-      return $ PkgConfigDbEntry pkgName pkgVersion
+        pkgName <- Parsec.parsec
+        pkgVersion <- optional (P.string "=" *> Parsec.parsec)
+        return $ PkgConfigDbEntry pkgName pkgVersion
 
 solverConfigParser :: Parser SolverConfig
 solverConfigParser =
-  SolverConfig
-    <$> (ReorderGoals <$> switch (long "reorder-goals"))
-    <*> (CountConflicts <$> switch (long "count-conflicts"))
-    <*> (FineGrainedConflicts <$> switch (long "fine-grained-conflicts"))
-    <*> (MinimizeConflictSet <$> switch (long "minimize-conflict-set"))
-    <*> (IndependentGoals <$> switch (long "independent-goals"))
-    <*> (AvoidReinstalls <$> switch (long "avoid-reinstalls"))
-    <*> (ShadowPkgs <$> switch (long "shadow-pkgs"))
-    <*> (StrongFlags <$> switch (long "strong-flags"))
-    <*> (AllowBootLibInstalls <$> switch (long "allow-boot-lib-installs"))
-    <*> onlyConstrainedParser
-    <*> optional (option (maybeReader readMaybe) (long "max-backjumps"))
-    <*> (EnableBackjumping <$> switch (long "enable-backjumping"))
-    <*> (SolveExecutables <$> switch (long "solve-executables"))
-    <*> pure Nothing -- goalOrder
-    <*> parsecOption (long "verbosity" <> value Verbosity.normal)
-    <*> (PruneAfterFirstSuccess <$> switch (long "prune-after-first-success"))
-
-onlyConstrainedParser :: Parser OnlyConstrained
-onlyConstrainedParser =
-  option reader (long "only-constrainted" <> value OnlyConstrainedNone)
-  where
-    reader =
-      str >>= \case
-        "none" -> pure OnlyConstrainedNone
-        "all" -> pure OnlyConstrainedAll
-        _ -> fail "bad only-constrainted"
+    SolverConfig
+        <$> ( ReorderGoals
+                <$> switchDefaultFalse
+                    ( long "reorder-goals"
+                        <> help "Try to reorder goals according to certain heuristics. Slows things down on average, but may make backtracking faster for some packages."
+                    )
+            )
+        <*> ( CountConflicts
+                <$> switchDefaultTrue
+                    ( long "no-count-conflicts"
+                        <> help "Try to speed up solving by preferring goals that are involved in a lot of conflicts (default)."
+                    )
+            )
+        <*> ( FineGrainedConflicts
+                <$> switchDefaultTrue
+                    ( long "no-fine-grained-conflicts"
+                        <> help "Skip a version of a package if it does not resolve the conflicts encountered in the last version, as a solver optimization (default)."
+                    )
+            )
+        <*> ( MinimizeConflictSet
+                <$> switchDefaultFalse
+                    ( long "minimize-conflict-set"
+                        <> help
+                            ( "When there is no solution, try to improve the error message by finding "
+                                ++ "a minimal conflict set (default: false). May increase run time "
+                                ++ "significantly."
+                            )
+                    )
+            )
+        <*> ( IndependentGoals
+                <$> switchDefaultFalse
+                    ( long "independent-goals"
+                        <> help "Treat several goals on the command line as independent. If several goals depend on the same package, different versions can be chosen."
+                    )
+            )
+        <*> ( AvoidReinstalls
+                <$> switch
+                    ( long "avoid-reinstalls"
+                        <> help "Do not select versions that would destructively overwrite installed packages."
+                    )
+            )
+        <*> ( ShadowPkgs
+                <$> switch
+                    ( long "shadow-pkgs"
+                        <> help "If multiple package instances of the same version are installed, treat all but one as shadowed."
+                    )
+            )
+        <*> ( StrongFlags
+                <$> switchDefaultFalse
+                    ( long "strong-flags"
+                        <> help "Do not defer flag choices (this used to be the default in cabal-install <= 1.20)."
+                    )
+            )
+        <*> ( AllowBootLibInstalls
+                <$> switchDefaultFalse
+                    ( long "allow-boot-library-installs"
+                        <> help "Allow cabal to install base, ghc-prim, integer-simple, integer-gmp, and template-haskell."
+                    )
+            )
+        <*> flag
+            OnlyConstrainedNone
+            OnlyConstrainedAll
+            ( long "reject-all-unconstrained-dependencies"
+                <> help "Require all packages to have constraints on them if they are to be selected."
+            )
+        <*> optional
+            ( option
+                (maybeReader readMaybe)
+                ( long "max-backjumps"
+                    <> help "Maximum number of backjumps allowed while solving. Use a negative number to enable unlimited backtracking. Use 0 to disable backtracking completely."
+                    <> value defaultMaxBackjumps
+                    <> showDefault
+                )
+            )
+        <*> ( EnableBackjumping
+                <$> switch
+                    ( long "enable-backjumping"
+                    )
+            )
+        <*> ( SolveExecutables
+                <$> switch
+                    ( long "solve-executables"
+                    )
+            )
+        <*> pure Nothing -- goalOrder
+        <*> parsecOption
+            ( long "verbosity" <> value Verbosity.normal
+            )
+        <*> ( PruneAfterFirstSuccess
+                <$> switch
+                    ( long "prune-after-first-success"
+                    )
+            )
 
 flagAssignmentParser :: Parser (Map PackageName FlagAssignment)
 flagAssignmentParser =
-  Map.fromListWith (<>) <$> many (parsecOptionWith parser (long "flag"))
+    Map.fromListWith (<>) <$> many (parsecOptionWith parser (long "flag"))
   where
     parser = (,) <$> Parsec.parsec <* P.char ':' <*> parsecFlagAssignmentNonEmpty
 
@@ -220,8 +348,18 @@ parsecOptionWith parser = option (eitherReader (Parsec.explicitEitherParsec pars
 parsecArgument :: (Parsec.Parsec a) => Mod ArgumentFields a -> Parser a
 parsecArgument = argument (eitherReader Parsec.eitherParsec)
 
--- https://github.com/pcapriotti/optparse-applicative/issues/243#issuecomment-653924318
-optArg :: String -> String -> ReadM a -> Parser (Maybe a)
-optArg x meta rdr =
-  flag' Nothing (long x <> style (<> fromString ("[=" <> meta <> "]")))
-    <|> option (Just <$> rdr) (long x <> internal)
+newtype CommaSeparated a = CommaSeparated {unCommaSeparated :: [a]}
+
+instance (Cabal.Parsec a) => Cabal.Parsec (CommaSeparated a) where
+    parsec = CommaSeparated <$> (Cabal.parsec `P.sepBy` P.char ',')
+
+-- flag :: a                         -- ^ default value
+--      -> a                         -- ^ active value
+--      -> Mod FlagFields a          -- ^ option modifier
+--      -> Parser a
+
+switchDefaultTrue :: Mod FlagFields Bool -> Parser Bool
+switchDefaultTrue = flag True False
+
+switchDefaultFalse :: Mod FlagFields Bool -> Parser Bool
+switchDefaultFalse = flag False True

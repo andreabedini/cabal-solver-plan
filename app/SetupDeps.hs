@@ -1,5 +1,5 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
 
 module SetupDeps where
 
@@ -18,25 +18,25 @@ import Distribution.Version
 import SourcePackage.Lens
 
 applyDefaultSetupDeps ::
-  Compiler ->
-  Platform ->
-  UnresolvedSourcePackage ->
-  UnresolvedSourcePackage
+    Compiler ->
+    Platform ->
+    UnresolvedSourcePackage ->
+    UnresolvedSourcePackage
 applyDefaultSetupDeps comp platform srcpkg =
-  over
-    (srcpkgDescription . packageDescription . setupBuildInfo)
-    ( \case
-        Just sbi ->
-          Just sbi
-        Nothing ->
-          case defaultSetupDeps comp platform (srcpkg ^. srcpkgDescription . packageDescription) of
+    over
+        (srcpkgDescription . packageDescription . setupBuildInfo)
+        ( \case
+            Just sbi ->
+                Just sbi
             Nothing ->
-              Nothing
-            Just deps
-              | isCustom -> Just PD.SetupBuildInfo {PD.defaultSetupDepends = True, PD.setupDepends = deps}
-              | otherwise -> Nothing
-    )
-    srcpkg
+                case defaultSetupDeps comp platform (srcpkg ^. srcpkgDescription . packageDescription) of
+                    Nothing ->
+                        Nothing
+                    Just deps
+                        | isCustom -> Just PD.SetupBuildInfo{PD.defaultSetupDepends = True, PD.setupDepends = deps}
+                        | otherwise -> Nothing
+        )
+        srcpkg
   where
     isCustom = PD.buildType pkgdesc == PD.Custom
     gpkgdesc = view srcpkgDescription srcpkg
@@ -61,60 +61,60 @@ applyDefaultSetupDeps comp platform srcpkg =
 -- 'addSetupCabalMinVersionConstraint' (in 'planPackages') to require
 -- @Cabal >= 1.20@ for Setup scripts.
 defaultSetupDeps ::
-  Compiler ->
-  Platform ->
-  PD.PackageDescription ->
-  Maybe [Dependency]
+    Compiler ->
+    Platform ->
+    PD.PackageDescription ->
+    Maybe [Dependency]
 defaultSetupDeps compiler platform pkg =
-  case packageSetupScriptStyle pkg of
-    -- For packages with build type custom that do not specify explicit
-    -- setup dependencies, we add a dependency on Cabal and a number
-    -- of other packages.
-    SetupCustomImplicitDeps ->
-      Just $
-        [ Dependency depPkgname anyVersion mainLibSet
-          | depPkgname <- legacyCustomSetupPkgs compiler platform
-        ]
-          ++ [ Dependency cabalPkgname cabalConstraint mainLibSet
-               | packageName pkg /= cabalPkgname
-             ]
-      where
-        -- The Cabal dep is slightly special:
-        -- \* We omit the dep for the Cabal lib itself, since it bootstraps.
-        -- \* We constrain it to be < 1.25
-        --
-        -- Note: we also add a global constraint to require Cabal >= 1.20
-        -- for Setup scripts (see use addSetupCabalMinVersionConstraint).
-        --
-        cabalConstraint =
-          orLaterVersion (csvToVersion (PD.specVersion pkg))
-            `intersectVersionRanges` earlierVersion cabalCompatMaxVer
-        -- The idea here is that at some point we will make significant
-        -- breaking changes to the Cabal API that Setup.hs scripts use.
-        -- So for old custom Setup scripts that do not specify explicit
-        -- constraints, we constrain them to use a compatible Cabal version.
-        cabalCompatMaxVer = mkVersion [1, 25]
+    case packageSetupScriptStyle pkg of
+        -- For packages with build type custom that do not specify explicit
+        -- setup dependencies, we add a dependency on Cabal and a number
+        -- of other packages.
+        SetupCustomImplicitDeps ->
+            Just $
+                [ Dependency depPkgname anyVersion mainLibSet
+                | depPkgname <- legacyCustomSetupPkgs compiler platform
+                ]
+                    ++ [ Dependency cabalPkgname cabalConstraint mainLibSet
+                       | packageName pkg /= cabalPkgname
+                       ]
+          where
+            -- The Cabal dep is slightly special:
+            -- \* We omit the dep for the Cabal lib itself, since it bootstraps.
+            -- \* We constrain it to be < 1.25
+            --
+            -- Note: we also add a global constraint to require Cabal >= 1.20
+            -- for Setup scripts (see use addSetupCabalMinVersionConstraint).
+            --
+            cabalConstraint =
+                orLaterVersion (csvToVersion (PD.specVersion pkg))
+                    `intersectVersionRanges` earlierVersion cabalCompatMaxVer
+            -- The idea here is that at some point we will make significant
+            -- breaking changes to the Cabal API that Setup.hs scripts use.
+            -- So for old custom Setup scripts that do not specify explicit
+            -- constraints, we constrain them to use a compatible Cabal version.
+            cabalCompatMaxVer = mkVersion [1, 25]
 
-    -- For other build types (like Simple) if we still need to compile an
-    -- external Setup.hs, it'll be one of the simple ones that only depends
-    -- on Cabal and base.
-    SetupNonCustomExternalLib ->
-      Just
-        [ Dependency cabalPkgname cabalConstraint mainLibSet,
-          Dependency basePkgname anyVersion mainLibSet
-        ]
-      where
-        cabalConstraint = orLaterVersion (csvToVersion (PD.specVersion pkg))
+        -- For other build types (like Simple) if we still need to compile an
+        -- external Setup.hs, it'll be one of the simple ones that only depends
+        -- on Cabal and base.
+        SetupNonCustomExternalLib ->
+            Just
+                [ Dependency cabalPkgname cabalConstraint mainLibSet
+                , Dependency basePkgname anyVersion mainLibSet
+                ]
+          where
+            cabalConstraint = orLaterVersion (csvToVersion (PD.specVersion pkg))
 
-    -- The internal setup wrapper method has no deps at all.
-    SetupNonCustomInternalLib -> Just []
-    -- This case gets ruled out by the caller, planPackages, see the note
-    -- above in the SetupCustomImplicitDeps case.
-    SetupCustomExplicitDeps ->
-      error $
-        "defaultSetupDeps: called for a package with explicit "
-          ++ "setup deps: "
-          ++ Cabal.prettyShow (packageId pkg)
+        -- The internal setup wrapper method has no deps at all.
+        SetupNonCustomInternalLib -> Just []
+        -- This case gets ruled out by the caller, planPackages, see the note
+        -- above in the SetupCustomImplicitDeps case.
+        SetupCustomExplicitDeps ->
+            error $
+                "defaultSetupDeps: called for a package with explicit "
+                    ++ "setup deps: "
+                    ++ Cabal.prettyShow (packageId pkg)
   where
     -- we require one less
     --
@@ -154,55 +154,55 @@ defaultSetupDeps compiler platform pkg =
 -- | Work out the 'SetupScriptStyle' given the package description.
 packageSetupScriptStyle :: PD.PackageDescription -> SetupScriptStyle
 packageSetupScriptStyle pkg
-  | buildType == PD.Custom,
-    Just setupbi <- PD.setupBuildInfo pkg, -- does have a custom-setup stanza
-    not (PD.defaultSetupDepends setupbi) -- but not one we added internally
-    =
-      SetupCustomExplicitDeps
-  | buildType == PD.Custom,
-    Just setupbi <- PD.setupBuildInfo pkg, -- we get this case post-solver as
-    PD.defaultSetupDepends setupbi -- the solver fills in the deps
-    =
-      SetupCustomImplicitDeps
-  | buildType == PD.Custom,
-    Nothing <- PD.setupBuildInfo pkg -- we get this case pre-solver
-    =
-      SetupCustomImplicitDeps
-  -- here we should fail.
-  | PD.specVersion pkg > cabalSpecLatest -- one cabal-install is built against
-    =
-      SetupNonCustomExternalLib
-  | otherwise =
-      SetupNonCustomInternalLib
+    | buildType == PD.Custom
+    , Just setupbi <- PD.setupBuildInfo pkg -- does have a custom-setup stanza
+    , not (PD.defaultSetupDepends setupbi) -- but not one we added internally
+        =
+        SetupCustomExplicitDeps
+    | buildType == PD.Custom
+    , Just setupbi <- PD.setupBuildInfo pkg -- we get this case post-solver as
+    , PD.defaultSetupDepends setupbi -- the solver fills in the deps
+        =
+        SetupCustomImplicitDeps
+    | buildType == PD.Custom
+    , Nothing <- PD.setupBuildInfo pkg -- we get this case pre-solver
+        =
+        SetupCustomImplicitDeps
+    -- here we should fail.
+    | PD.specVersion pkg > cabalSpecLatest -- one cabal-install is built against
+        =
+        SetupNonCustomExternalLib
+    | otherwise =
+        SetupNonCustomInternalLib
   where
     buildType = PD.buildType pkg
 
 legacyCustomSetupPkgs :: Compiler -> Platform -> [PackageName]
 legacyCustomSetupPkgs compiler (Platform _ os) =
-  map mkPackageName $
-    [ "array",
-      "base",
-      "binary",
-      "bytestring",
-      "containers",
-      "deepseq",
-      "directory",
-      "filepath",
-      "pretty",
-      "process",
-      "time",
-      "transformers"
-    ]
-      ++ ["Win32" | os == Windows]
-      ++ ["unix" | os /= Windows]
-      ++ ["ghc-prim" | isGHC]
-      ++ ["template-haskell" | isGHC]
-      ++ ["old-time" | notGHC710]
+    map mkPackageName $
+        [ "array"
+        , "base"
+        , "binary"
+        , "bytestring"
+        , "containers"
+        , "deepseq"
+        , "directory"
+        , "filepath"
+        , "pretty"
+        , "process"
+        , "time"
+        , "transformers"
+        ]
+            ++ ["Win32" | os == Windows]
+            ++ ["unix" | os /= Windows]
+            ++ ["ghc-prim" | isGHC]
+            ++ ["template-haskell" | isGHC]
+            ++ ["old-time" | notGHC710]
   where
     isGHC = compilerCompatFlavor GHC compiler
     notGHC710 = case compilerCompatVersion GHC compiler of
-      Nothing -> False
-      Just v -> v <= mkVersion [7, 9]
+        Nothing -> False
+        Just v -> v <= mkVersion [7, 9]
 
 basePkgname :: PD.PackageName
 basePkgname = mkPackageName "base"

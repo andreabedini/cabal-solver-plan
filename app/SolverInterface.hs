@@ -9,13 +9,13 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Distribution.Client.Dependency
-  ( PackageConstraint (..),
+import Distribution.Client.Dependency (
+    PackageConstraint (..),
     PackagePreference (..),
     PackageProperty (..),
     PackagesPreferenceDefault (..),
     scopeToplevel,
-  )
+ )
 import Distribution.Client.Targets (UserConstraint, userToPackageConstraint)
 import Distribution.Client.Utils (incVersion)
 import Distribution.PackageDescription qualified as PD
@@ -50,180 +50,181 @@ import Distribution.Types.PackageVersionConstraint (PackageVersionConstraint (..
 import SetupDeps (cabalPkgname)
 
 solve ::
-  CompilerInfo ->
-  OS ->
-  Arch ->
-  PkgConfigDb ->
-  [UserConstraint] ->
-  [PackageVersionConstraint] ->
-  Map PackageName PD.FlagAssignment ->
-  SolverConfig ->
-  PreferOldest ->
-  InstalledPackageIndex ->
-  PackageIndex (SourcePackage loc) ->
-  Map PackageName VersionRange ->
-  [(PackageId, PD.ComponentName)] ->
-  Set PackageName ->
-  RetryLog Message SolverFailure (Assignment, RevDepMap)
+    CompilerInfo ->
+    OS ->
+    Arch ->
+    PkgConfigDb ->
+    [UserConstraint] ->
+    [PackageVersionConstraint] ->
+    Map PackageName PD.FlagAssignment ->
+    SolverConfig ->
+    PreferOldest ->
+    InstalledPackageIndex ->
+    PackageIndex (SourcePackage loc) ->
+    Map PackageName VersionRange ->
+    [(PackageId, PD.ComponentName)] ->
+    Set PackageName ->
+    RetryLog Message SolverFailure (Assignment, RevDepMap)
 solve
-  cinfo
-  os
-  arch
-  pkgConfigDb
-  solverSettingConstraints
-  solverSettingPreferences
-  solverSettingFlagAssignments
-  solverConfig
-  solverSettingPreferOldest
-  installedPkgIndex
-  sourcePkgIndex
-  sourcePkgPrefs
-  extraPreInstalled
-  targets =
-    Solver.solve solverConfig cinfo idx pkgConfigDb packagePreferences gcs targets
-    where
-      constraints :: [LabeledPackageConstraint]
-      constraints = mkConstraints (compilerInfoId cinfo) solverSettingConstraints solverSettingFlagAssignments
+    cinfo
+    os
+    arch
+    pkgConfigDb
+    solverSettingConstraints
+    solverSettingPreferences
+    solverSettingFlagAssignments
+    solverConfig
+    solverSettingPreferOldest
+    installedPkgIndex
+    sourcePkgIndex
+    sourcePkgPrefs
+    extraPreInstalled
+    targets =
+        Solver.solve solverConfig cinfo idx pkgConfigDb packagePreferences gcs targets
+      where
+        constraints :: [LabeledPackageConstraint]
+        constraints = mkConstraints (compilerInfoId cinfo) solverSettingConstraints solverSettingFlagAssignments
 
-      packagePreferences :: PackageName -> PackagePreferences
-      packagePreferences = interpretPackagesPreference targets preferenceDefault preferences
+        packagePreferences :: PackageName -> PackagePreferences
+        packagePreferences = interpretPackagesPreference targets preferenceDefault preferences
 
-      preferences :: [PackagePreference]
-      preferences = mkPreferences sourcePkgPrefs solverSettingPreferences
+        preferences :: [PackagePreference]
+        preferences = mkPreferences sourcePkgPrefs solverSettingPreferences
 
-      preferenceDefault :: PackagesPreferenceDefault
-      preferenceDefault =
-        -- TODO: [required eventually] decide if we need to prefer
-        -- installed for global packages, or prefer latest even for
-        -- global packages. Perhaps should be configurable but with a
-        -- different name than "upgrade-dependencies".
-        if Flag.asBool solverSettingPreferOldest
-          then PreferAllOldest
-          else PreferLatestForSelected
+        preferenceDefault :: PackagesPreferenceDefault
+        preferenceDefault =
+            -- TODO: [required eventually] decide if we need to prefer
+            -- installed for global packages, or prefer latest even for
+            -- global packages. Perhaps should be configurable but with a
+            -- different name than "upgrade-dependencies".
+            if Flag.asBool solverSettingPreferOldest
+                then PreferAllOldest
+                else PreferLatestForSelected
 
-      -- Constraints have to be converted into a finite map indexed by PN.
-      gcs :: Map.Map PackageName [LabeledPackageConstraint]
-      gcs =
-        Map.fromListWith
-          (<>)
-          [ (scopeToPackageName scope, [lpc])
-            | lpc@(LabeledPackageConstraint (PackageConstraint scope _property) _source) <- constraints
-          ]
+        -- Constraints have to be converted into a finite map indexed by PN.
+        gcs :: Map.Map PackageName [LabeledPackageConstraint]
+        gcs =
+            Map.fromListWith
+                (<>)
+                [ (scopeToPackageName scope, [lpc])
+                | lpc@(LabeledPackageConstraint (PackageConstraint scope _property) _source) <- constraints
+                ]
 
-      idx :: Index
-      idx =
-        extraLibsIndex
-          <> convPIs
-            os
-            arch
-            cinfo
-            gcs
-            (ShadowPkgs False)
-            (StrongFlags False)
-            (SolveExecutables True)
-            installedPkgIndex
-            sourcePkgIndex
+        idx :: Index
+        idx =
+            extraLibsIndex
+                <> convPIs
+                    os
+                    arch
+                    cinfo
+                    gcs
+                    (ShadowPkgs False)
+                    (StrongFlags False)
+                    (SolveExecutables True)
+                    installedPkgIndex
+                    sourcePkgIndex
 
-      extraLibsIndex = mkExtraIndex extraPreInstalled
+        extraLibsIndex = mkExtraIndex extraPreInstalled
 
 mkConstraints ::
-  -- | compiler
-  CompilerId ->
-  -- | ssConstraints
-  [UserConstraint] ->
-  -- | ssFlagAssignments (?)
-  Map.Map PackageName PD.FlagAssignment ->
-  -- | result
-  [LabeledPackageConstraint]
+    -- | compiler
+    CompilerId ->
+    -- | ssConstraints
+    [UserConstraint] ->
+    -- | ssFlagAssignments (?)
+    Map.Map PackageName PD.FlagAssignment ->
+    -- | result
+    [LabeledPackageConstraint]
 mkConstraints compilerId ssConstraints ssFlagAssignments =
-  concat
-    [ [ LabeledPackageConstraint
-          (PackageConstraint (ScopeAnySetupQualifier cabalPkgname) (PackagePropertyVersion $ orLaterVersion $ setupMinCabalVersion compilerId))
-          ConstraintSetupCabalMinVersion,
-        LabeledPackageConstraint
-          (PackageConstraint (ScopeAnySetupQualifier cabalPkgname) (PackagePropertyVersion $ earlierVersion setupMaxCabalVersion))
-          ConstraintSetupCabalMaxVersion
-      ],
-      [ LabeledPackageConstraint
-          (userToPackageConstraint pc)
-          ConstraintSourceCommandlineFlag
-        | pc <- ssConstraints
-      ],
-      [ LabeledPackageConstraint
-          (PackageConstraint (scopeToplevel pn) (PackagePropertyFlags flags))
-          ConstraintSourceCommandlineFlag
-        | (pn, flags) <- Map.toList ssFlagAssignments
-      ]
-    ]
+    concat
+        [
+            [ LabeledPackageConstraint
+                (PackageConstraint (ScopeAnySetupQualifier cabalPkgname) (PackagePropertyVersion $ orLaterVersion $ setupMinCabalVersion compilerId))
+                ConstraintSetupCabalMinVersion
+            , LabeledPackageConstraint
+                (PackageConstraint (ScopeAnySetupQualifier cabalPkgname) (PackagePropertyVersion $ earlierVersion setupMaxCabalVersion))
+                ConstraintSetupCabalMaxVersion
+            ]
+        , [ LabeledPackageConstraint
+            (userToPackageConstraint pc)
+            ConstraintSourceCommandlineFlag
+          | pc <- ssConstraints
+          ]
+        , [ LabeledPackageConstraint
+            (PackageConstraint (scopeToplevel pn) (PackagePropertyFlags flags))
+            ConstraintSourceCommandlineFlag
+          | (pn, flags) <- Map.toList ssFlagAssignments
+          ]
+        ]
 
 mkPreferences ::
-  -- | sourcePkgPrefs
-  Map.Map PackageName VersionRange ->
-  -- | ssPreferences
-  [PackageVersionConstraint] ->
-  -- | result
-  [PackagePreference]
+    -- | sourcePkgPrefs
+    Map.Map PackageName VersionRange ->
+    -- | ssPreferences
+    [PackageVersionConstraint] ->
+    -- | result
+    [PackagePreference]
 mkPreferences sourcePkgPrefs ssPreferences =
-  -- preferences from the config file or command line
-  [PackageVersionPreference name ver | PackageVersionConstraint name ver <- ssPreferences]
-    ++ [PackageVersionPreference name ver | (name, ver) <- Map.toList sourcePkgPrefs]
+    -- preferences from the config file or command line
+    [PackageVersionPreference name ver | PackageVersionConstraint name ver <- ssPreferences]
+        ++ [PackageVersionPreference name ver | (name, ver) <- Map.toList sourcePkgPrefs]
 
 -- | Give an interpretation to the global 'PackagesPreference' as
 --  specific per-package 'PackageVersionPreference'.
 interpretPackagesPreference ::
-  Set PackageName ->
-  PackagesPreferenceDefault ->
-  [PackagePreference] ->
-  (PackageName -> PackagePreferences)
+    Set PackageName ->
+    PackagesPreferenceDefault ->
+    [PackagePreference] ->
+    (PackageName -> PackagePreferences)
 interpretPackagesPreference selected defaultPref prefs =
-  \pkgname ->
-    PackagePreferences
-      (versionPref pkgname)
-      (installPref pkgname)
-      (stanzasPref pkgname)
+    \pkgname ->
+        PackagePreferences
+            (versionPref pkgname)
+            (installPref pkgname)
+            (stanzasPref pkgname)
   where
     versionPref :: PackageName -> [VersionRange]
     versionPref pkgname =
-      fromMaybe [anyVersion] (Map.lookup pkgname versionPrefs)
+        fromMaybe [anyVersion] (Map.lookup pkgname versionPrefs)
 
     versionPrefs :: Map.Map PackageName [VersionRange]
     versionPrefs =
-      Map.fromListWith
-        (++)
-        [(pkgname, [pref]) | PackageVersionPreference pkgname pref <- prefs]
+        Map.fromListWith
+            (++)
+            [(pkgname, [pref]) | PackageVersionPreference pkgname pref <- prefs]
 
     installPref :: PackageName -> InstalledPreference
     installPref pkgname =
-      fromMaybe (installPrefDefault pkgname) (Map.lookup pkgname installPrefs)
+        fromMaybe (installPrefDefault pkgname) (Map.lookup pkgname installPrefs)
 
     installPrefs :: Map.Map PackageName InstalledPreference
     installPrefs =
-      Map.fromList
-        [(pkgname, pref) | PackageInstalledPreference pkgname pref <- prefs]
+        Map.fromList
+            [(pkgname, pref) | PackageInstalledPreference pkgname pref <- prefs]
 
     installPrefDefault :: PackageName -> InstalledPreference
     installPrefDefault = case defaultPref of
-      PreferAllLatest -> const Preference.PreferLatest
-      PreferAllOldest -> const Preference.PreferOldest
-      PreferAllInstalled -> const Preference.PreferInstalled
-      PreferLatestForSelected -> \pkgname ->
-        -- When you say cabal install foo, what you really mean is, prefer the
-        -- latest version of foo, but the installed version of everything else
-        if pkgname `Set.member` selected
-          then Preference.PreferLatest
-          else Preference.PreferInstalled
+        PreferAllLatest -> const Preference.PreferLatest
+        PreferAllOldest -> const Preference.PreferOldest
+        PreferAllInstalled -> const Preference.PreferInstalled
+        PreferLatestForSelected -> \pkgname ->
+            -- When you say cabal install foo, what you really mean is, prefer the
+            -- latest version of foo, but the installed version of everything else
+            if pkgname `Set.member` selected
+                then Preference.PreferLatest
+                else Preference.PreferInstalled
 
     stanzasPref :: PackageName -> [OptionalStanza]
     stanzasPref pkgname =
-      fromMaybe [] (Map.lookup pkgname stanzasPrefs)
+        fromMaybe [] (Map.lookup pkgname stanzasPrefs)
 
     stanzasPrefs :: Map.Map PackageName [OptionalStanza]
     stanzasPrefs =
-      Map.fromListWith
-        (\a b -> nub (a ++ b))
-        [ (pkgname, pref)
-          | PackageStanzasPreference pkgname pref <- prefs
-        ]
+        Map.fromListWith
+            (\a b -> nub (a ++ b))
+            [ (pkgname, pref)
+            | PackageStanzasPreference pkgname pref <- prefs
+            ]
 
 -- While we can talk to older Cabal versions (we need to be able to
 -- do so for custom Setup scripts that require older Cabal lib
@@ -264,19 +265,19 @@ interpretPackagesPreference selected defaultPref prefs =
 --       stored as a field inside 'Distribution.Compiler.Compiler'
 setupMinCabalVersion :: CompilerId -> Version
 setupMinCabalVersion (CompilerId flavor version) =
-  if
-      | isGHC, version >= mkVersion [9, 6] -> mkVersion [3, 10]
-      | isGHC, version >= mkVersion [9, 4] -> mkVersion [3, 8]
-      | isGHC, version >= mkVersion [9, 2] -> mkVersion [3, 6]
-      | isGHC, version >= mkVersion [9, 0] -> mkVersion [3, 4]
-      | isGHC, version >= mkVersion [8, 10] -> mkVersion [3, 2]
-      | isGHC, version >= mkVersion [8, 8] -> mkVersion [3, 0]
-      | isGHC, version >= mkVersion [8, 6] -> mkVersion [2, 4]
-      | isGHC, version >= mkVersion [8, 4] -> mkVersion [2, 2]
-      | isGHC, version >= mkVersion [8, 2] -> mkVersion [2, 0]
-      | isGHC, version >= mkVersion [8, 0] -> mkVersion [1, 24]
-      | isGHC, version >= mkVersion [7, 10] -> mkVersion [1, 22]
-      | otherwise -> mkVersion [1, 20]
+    if
+            | isGHC, version >= mkVersion [9, 6] -> mkVersion [3, 10]
+            | isGHC, version >= mkVersion [9, 4] -> mkVersion [3, 8]
+            | isGHC, version >= mkVersion [9, 2] -> mkVersion [3, 6]
+            | isGHC, version >= mkVersion [9, 0] -> mkVersion [3, 4]
+            | isGHC, version >= mkVersion [8, 10] -> mkVersion [3, 2]
+            | isGHC, version >= mkVersion [8, 8] -> mkVersion [3, 0]
+            | isGHC, version >= mkVersion [8, 6] -> mkVersion [2, 4]
+            | isGHC, version >= mkVersion [8, 4] -> mkVersion [2, 2]
+            | isGHC, version >= mkVersion [8, 2] -> mkVersion [2, 0]
+            | isGHC, version >= mkVersion [8, 0] -> mkVersion [1, 24]
+            | isGHC, version >= mkVersion [7, 10] -> mkVersion [1, 22]
+            | otherwise -> mkVersion [1, 20]
   where
     isGHC = flavor `elem` [GHC, GHCJS]
 
@@ -298,23 +299,23 @@ setupMinCabalVersion (CompilerId flavor version) =
 --
 setupMaxCabalVersion :: Version
 setupMaxCabalVersion =
-  alterVersion (take 2) $ incVersion 1 $ incVersion 1 cabalVersion
+    alterVersion (take 2) $ incVersion 1 $ incVersion 1 cabalVersion
 
 -- | Create a solver index from package identifiers and library names
 mkExtraIndex :: [(PackageIdentifier, PD.ComponentName)] -> Index
 mkExtraIndex libs =
-  mkIndex
-    [ (pn, I pv loc, mkPInfo cname)
-      | (PackageIdentifier pn pv, cname) <- libs,
-        let loc = Inst $ mkUnitId (prettyShow pn)
-    ]
+    mkIndex
+        [ (pn, I pv loc, mkPInfo cname)
+        | (PackageIdentifier pn pv, cname) <- libs
+        , let loc = Inst $ mkUnitId (prettyShow pn)
+        ]
   where
     defaultComponentInfo =
-      ComponentInfo {compIsVisible = IsVisible True, compIsBuildable = IsBuildable True}
+        ComponentInfo{compIsVisible = IsVisible True, compIsBuildable = IsBuildable True}
     mkPInfo = \case
-      PD.CLibName name ->
-        PInfo mempty (Map.singleton (ExposedLib name) defaultComponentInfo) mempty Nothing
-      PD.CExeName name ->
-        PInfo mempty (Map.singleton (ExposedExe name) defaultComponentInfo) mempty Nothing
-      otherComponentName ->
-        error $ "component " ++ prettyShow otherComponentName ++ " not supported as preinstalled"
+        PD.CLibName name ->
+            PInfo mempty (Map.singleton (ExposedLib name) defaultComponentInfo) mempty Nothing
+        PD.CExeName name ->
+            PInfo mempty (Map.singleton (ExposedExe name) defaultComponentInfo) mempty Nothing
+        otherComponentName ->
+            error $ "component " ++ prettyShow otherComponentName ++ " not supported as preinstalled"
