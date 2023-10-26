@@ -228,7 +228,7 @@ data PkgConfigDbSource
 pkgConfigDbSourceParser :: Parser PkgConfigDbSource
 pkgConfigDbSourceParser =
     asum
-        [ parsecOptionWith entryParser (long "pkgconfig-entry")
+        [ parsecOptionWith entryParser (long "with-pkgconfig-entries")
         , flag' PkgConfigDbFromSystem (long "use-system-pkgconfig")
         ]
   where
@@ -241,91 +241,129 @@ solverConfigParser :: Parser SolverConfig
 solverConfigParser =
     SolverConfig
         <$> ( ReorderGoals
-                <$> switchDefaultFalse
+                <$> option
+                    auto
                     ( long "reorder-goals"
                         <> help "Try to reorder goals according to certain heuristics. Slows things down on average, but may make backtracking faster for some packages."
+                        <> value False
+                        <> showDefault
                     )
             )
         <*> ( CountConflicts
-                <$> switchDefaultTrue
+                <$> option
+                    auto
                     ( long "no-count-conflicts"
-                        <> help "Try to speed up solving by preferring goals that are involved in a lot of conflicts (default)."
+                        <> help "Try to speed up solving by preferring goals that are involved in a lot of conflicts."
+                        <> value True
+                        <> showDefault
                     )
             )
         <*> ( FineGrainedConflicts
-                <$> switchDefaultTrue
+                <$> option
+                    auto
                     ( long "no-fine-grained-conflicts"
-                        <> help "Skip a version of a package if it does not resolve the conflicts encountered in the last version, as a solver optimization (default)."
+                        <> help "Skip a version of a package if it does not resolve the conflicts encountered in the last version, as a solver optimization."
+                        <> value True
+                        <> showDefault
                     )
             )
         <*> ( MinimizeConflictSet
-                <$> switchDefaultFalse
+                <$> option
+                    auto
                     ( long "minimize-conflict-set"
                         <> help
                             ( "When there is no solution, try to improve the error message by finding "
                                 ++ "a minimal conflict set (default: false). May increase run time "
                                 ++ "significantly."
                             )
+                        <> value False
+                        <> showDefault
                     )
             )
         <*> ( IndependentGoals
-                <$> switchDefaultFalse
+                <$> option
+                    auto
                     ( long "independent-goals"
                         <> help "Treat several goals on the command line as independent. If several goals depend on the same package, different versions can be chosen."
+                        <> value False
+                        <> showDefault
                     )
             )
         <*> ( AvoidReinstalls
-                <$> switch
+                <$> option
+                    auto
                     ( long "avoid-reinstalls"
                         <> help "Do not select versions that would destructively overwrite installed packages."
+                        <> value False
+                        <> showDefault
                     )
             )
         <*> ( ShadowPkgs
-                <$> switch
+                <$> option
+                    auto
                     ( long "shadow-pkgs"
                         <> help "If multiple package instances of the same version are installed, treat all but one as shadowed."
+                        <> value False
+                        <> showDefault
                     )
             )
         <*> ( StrongFlags
-                <$> switchDefaultFalse
+                <$> option
+                    auto
                     ( long "strong-flags"
                         <> help "Do not defer flag choices (this used to be the default in cabal-install <= 1.20)."
+                        <> value False
+                        <> showDefault
                     )
             )
         <*> ( AllowBootLibInstalls
-                <$> switchDefaultFalse
+                <$> option
+                    auto
                     ( long "allow-boot-library-installs"
                         <> help "Allow cabal to install base, ghc-prim, integer-simple, integer-gmp, and template-haskell."
+                        <> value False
+                        <> showDefault
                     )
             )
         <*> flag
             OnlyConstrainedNone
             OnlyConstrainedAll
-            ( long "reject-all-unconstrained-dependencies"
+            ( long "reject-unconstrained-dependencies"
                 <> help "Require all packages to have constraints on them if they are to be selected."
             )
-        <*> optional
-            ( option
-                (maybeReader readMaybe)
-                ( long "max-backjumps"
-                    <> help "Maximum number of backjumps allowed while solving. Use a negative number to enable unlimited backtracking. Use 0 to disable backtracking completely."
-                    <> value defaultMaxBackjumps
-                    <> showDefault
-                )
+        <*> ( (\case n | n < 0 -> Nothing; n -> Just n)
+                <$> option
+                    auto
+                    ( long "max-backjumps"
+                        <> help "Maximum number of backjumps allowed while solving. Use a negative number to enable unlimited backtracking. Use 0 to disable backtracking completely."
+                        <> value defaultMaxBackjumps
+                        <> showDefault
+                    )
             )
         <*> ( EnableBackjumping
-                <$> switch
+                <$> option
+                    auto
                     ( long "enable-backjumping"
+                        <> value True
+                        <> showDefault
+                        -- I am not sure this makes sense so I'll hide this option
+                        <> internal
                     )
             )
         <*> ( SolveExecutables
-                <$> switch
+                <$> option
+                    auto
                     ( long "solve-executables"
+                        <> help "Whether or not to solve for dependencies on executables."
+                        <> value True
+                        <> showDefault
                     )
             )
-        <*> pure Nothing -- goalOrder
+        -- Skip goalOrder. It is a function
+        <*> pure Nothing
         <*> parsecOption
-            ( long "verbosity" <> value Verbosity.normal
+            ( long "verbosity"
+                <> value Verbosity.normal
             )
         <*> ( PruneAfterFirstSuccess
                 <$> switch
@@ -352,14 +390,3 @@ newtype CommaSeparated a = CommaSeparated {unCommaSeparated :: [a]}
 
 instance (Cabal.Parsec a) => Cabal.Parsec (CommaSeparated a) where
     parsec = CommaSeparated <$> (Cabal.parsec `P.sepBy` P.char ',')
-
--- flag :: a                         -- ^ default value
---      -> a                         -- ^ active value
---      -> Mod FlagFields a          -- ^ option modifier
---      -> Parser a
-
-switchDefaultTrue :: Mod FlagFields Bool -> Parser Bool
-switchDefaultTrue = flag True False
-
-switchDefaultFalse :: Mod FlagFields Bool -> Parser Bool
-switchDefaultFalse = flag False True
