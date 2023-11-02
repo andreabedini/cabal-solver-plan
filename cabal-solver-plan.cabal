@@ -17,9 +17,8 @@ executable cabal-solver-plan
                     , Options
                     , SolverInterface
                     , SourcePackage.Lens
-    build-depends:    base ^>=4.17.1.0
+    build-depends:    base
                     , aeson
-                    , base
                     , binary
                     , bytestring
                     , filepath

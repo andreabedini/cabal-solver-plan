@@ -12,13 +12,12 @@
         perSystem = { self', system, pkgs, ... }:
           let
             project = pkgs.haskell-nix.cabalProject' {
-              compiler-nix-name = "ghc94";
+              compiler-nix-name = "ghc96";
               src = ./.;
               shell.tools = {
                 cabal = "latest";
+                cabal-plan = "latest";
                 fourmolu = "0.14.0.0";
-                haskell-language-server = "latest";
-                hlint = "latest";
               };
             };
 
@@ -42,9 +41,11 @@
   nixConfig = {
     extra-substituters = [
       "https://cache.iog.io"
+      "https://cache.zw3rk.com"
     ];
     extra-trusted-public-keys = [
       "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
+      "loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk="
     ];
   };
 }
