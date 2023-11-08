@@ -28,7 +28,7 @@ import Distribution.Client.Types (
  )
 import Distribution.InstalledPackageInfo (parseInstalledPackageInfo)
 import Distribution.Pretty qualified as Cabal
-import Distribution.Simple (CompilerInfo, compilerInfo)
+import Distribution.Simple (CompilerInfo, PackageDB (..), compilerInfo)
 import Distribution.Simple.GHC qualified as GHC
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import Distribution.Simple.PackageIndex qualified as Cabal.Index
@@ -67,10 +67,24 @@ main = do
     -- idependently; they lose their independence if we let the user refer to
     -- an installed version of GHC. So there are two cases here: with or
     -- without access to a real compiler.
-    (cinfo, Platform arch os, installedPkgIndex) <-
+    (cinfo, Platform arch os, globalIPI) <-
         determineCompiler verbosity compilerSource
 
-    pkgConfigDb <- readPkgConfigDb verbosity pkgConfigDbSources
+    extraIPIs <- foldMap readPackageDb extraPackageDbs
+    let installedPkgIndex = globalIPI <> extraIPIs
+
+    pkgConfigDb <- do
+        systemPkgConfigEntries <-
+            if useSystemPkgConfigDb
+                then
+                    Solver.readPkgConfigDb verbosity defaultProgramDb <&> \case
+                        PkgConfigDb m ->
+                            Map.toList m
+                        NoPkgConfigDb ->
+                            mempty
+                else mempty
+
+        pure $ PkgConfigDb $ Map.fromList $ systemPkgConfigEntries <> pkgConfigDbEntries
 
     SourcePackageDb sourcePkgIndex sourcePkgPrefs <-
         loadRepositories
@@ -143,15 +157,16 @@ determineCompiler ::
     CompilerSource ->
     IO (CompilerInfo, Platform, InstalledPackageIndex)
 determineCompiler verbosity = \case
-    CompilerInline cinfo platform packagedbs -> do
-        installedPkgIndex <- foldMap readPackageDb packagedbs
-        return (cinfo, platform, installedPkgIndex)
-    CompilerFromSystem hcPath packagedbs -> do
+    CompilerInline cinfo platform -> do
+        return (cinfo, platform, mempty)
+    CompilerFromSystem hcPath useGlobalPackageDb -> do
         (compiler, mPlatform, programdb) <-
             GHC.configure verbosity (Just hcPath) Nothing defaultProgramDb
         let platform = fromMaybe buildPlatform mPlatform
         installedPkgIndex <-
-            GHC.getInstalledPackages verbosity compiler packagedbs programdb
+            if useGlobalPackageDb
+                then GHC.getInstalledPackages verbosity compiler [GlobalPackageDB] programdb
+                else mempty
         return (compilerInfo compiler, platform, installedPkgIndex)
 
 -- | Load source package repositories.
@@ -233,30 +248,14 @@ readPackageDb path = do
     entriesFilename <-
         filter ((== ".conf") . takeExtension)
             <$> listDirectory path
-    ipis <- for entriesFilename $ \filename -> do
-        content <- BS.readFile (path </> filename)
-        case parseInstalledPackageInfo content of
-            Left e -> fail (unlines $ NE.toList e)
-            Right (warnings, ipi) -> do
-                for_ warnings print
-                return ipi
-    return $ Cabal.Index.fromList ipis
-
--- | Obtain a pkgconfig database. We either get the available packages from
--- the command line or we use the system pkg-config.
-readPkgConfigDb :: Verbosity -> [PkgConfigDbSource] -> IO PkgConfigDb
-readPkgConfigDb verbosity pkgConfigDbSources =
-    case NE.nonEmpty pkgConfigDbSources of
-        Nothing -> return NoPkgConfigDb
-        Just sources ->
-            PkgConfigDb . Map.fromList
-                <$> foldMap
-                    ( \case
-                        PkgConfigDbEntry name mVersion ->
-                            return [(name, mVersion)]
-                        PkgConfigDbFromSystem ->
-                            Solver.readPkgConfigDb verbosity defaultProgramDb <&> \case
-                                PkgConfigDb m -> Map.toList m
-                                NoPkgConfigDb -> mempty
-                    )
-                    sources
+    Cabal.Index.fromList
+        <$> for
+            entriesFilename
+            ( \filename -> do
+                content <- BS.readFile (path </> filename)
+                case parseInstalledPackageInfo content of
+                    Left e -> fail (unlines $ NE.toList e)
+                    Right (warnings, ipi) -> do
+                        for_ warnings print
+                        return ipi
+            )

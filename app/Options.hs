@@ -4,7 +4,6 @@ module Options (
     parseOptions,
     Options (..),
     CompilerSource (..),
-    PkgConfigDbSource (..),
 )
 where
 
@@ -27,7 +26,7 @@ import Distribution.Parsec (Parsec (parsec))
 import Distribution.Parsec qualified as Cabal
 import Distribution.Parsec qualified as Parsec
 import Distribution.Pretty qualified as Cabal
-import Distribution.Simple (AbiTag (..), CompilerInfo (..), PackageDB (..), PackageDBStack, PackageName, PkgconfigName)
+import Distribution.Simple (AbiTag (..), CompilerInfo (..), PackageName, PkgconfigName)
 import Distribution.Solver.Modular (PruneAfterFirstSuccess (..), SolverConfig (..))
 import Distribution.Solver.Types.Settings (
     AllowBootLibInstalls (..),
@@ -50,7 +49,6 @@ import Distribution.Types.PackageVersionConstraint
 import Distribution.Verbosity qualified as Verbosity
 import Network.URI (URI (..), parseAbsoluteURI)
 import Options.Applicative
-import Text.Read (readMaybe)
 
 -- | These are the options of the command line tool. They roughlty
 -- correspond to the inputs required by the solver but there are some
@@ -73,10 +71,12 @@ import Text.Read (readMaybe)
 -- aeson-2.2.0.0 as target.
 data Options = Options
     { compilerSource :: CompilerSource
+    , extraPackageDbs :: [FilePath]
     , extraPreInstalled :: [(PackageId, ComponentName)]
     , repositories :: [Either URI RemoteRepo]
     , mTotalIndexState :: Maybe TotalIndexState
-    , pkgConfigDbSources :: [PkgConfigDbSource]
+    , useSystemPkgConfigDb :: Bool
+    , pkgConfigDbEntries :: [(PkgconfigName, Maybe PkgconfigVersion)]
     , constraints :: [UserConstraint]
     , preferences :: [PackageVersionConstraint]
     , flagAssignments :: Map PackageName FlagAssignment
@@ -97,10 +97,12 @@ opts = info (s <**> helper) mods
     s =
         Options
             <$> compilerSourceParser
+            <*> many (strOption (long "package-db" <> metavar "PATH" <> help "Load packagedb at PATH"))
             <*> many extraPreInstalledParser
             <*> many repositoryParser
             <*> optional (parsecOption (long "index-state"))
-            <*> many pkgConfigDbSourceParser
+            <*> switch (long "use-system-pkg-config" <> help "Use system pkg-config.")
+            <*> many pkgConfEntryParser
             <*> many (parsecOption (long "constraint"))
             <*> pure [] -- TODO: solverSettingPreferences
             <*> flagAssignmentParser
@@ -135,8 +137,14 @@ repositoryParser = option g (long "repository")
     g = Left <$> maybeReader parseAbsoluteURI <|> Right <$> eitherReader Parsec.eitherParsec
 
 data CompilerSource
-    = CompilerInline CompilerInfo Platform [FilePath]
-    | CompilerFromSystem FilePath PackageDBStack
+    = CompilerInline
+        CompilerInfo
+        Platform
+    | CompilerFromSystem
+        -- | sdfsd
+        FilePath
+        -- | Whether or not to load the compiler's global packagedb
+        Bool
 
 compilerSourceParser :: Parser CompilerSource
 compilerSourceParser =
@@ -151,20 +159,15 @@ compilerSourceParser =
                     <> value "ghc"
                     <> showDefault
                 )
-            <*> many
-                ( option
-                    readPackageDb
-                    ( long "package-db"
-                        <> help "Package database of pre-installed packages."
-                        <> metavar "GLOBAL|USER|PATH"
-                    )
+            <*> switch
+                ( long "use-global-packagedb"
+                    <> help "Use the compiler's gloabl packagedb"
                 )
 
     compilerInline =
         CompilerInline
             <$> compilerInfoOption
             <*> platformOption
-            <*> many (strOption (long "package-db-dir" <> metavar "PATH"))
 
     compilerInfoOption =
         CompilerInfo
@@ -214,28 +217,19 @@ compilerSourceParser =
                 <> showDefaultWith Cabal.prettyShow
             )
 
-    readPackageDb :: ReadM PackageDB
-    readPackageDb =
-        str >>= \case
-            "global" -> return GlobalPackageDB
-            "user" -> return UserPackageDB
-            path -> return $ SpecificPackageDB path
-
-data PkgConfigDbSource
-    = PkgConfigDbEntry PkgconfigName (Maybe PkgconfigVersion)
-    | PkgConfigDbFromSystem
-
-pkgConfigDbSourceParser :: Parser PkgConfigDbSource
-pkgConfigDbSourceParser =
-    asum
-        [ parsecOptionWith entryParser (long "with-pkgconfig-entries")
-        , flag' PkgConfigDbFromSystem (long "use-system-pkgconfig")
-        ]
+pkgConfEntryParser :: Parser (PkgconfigName, Maybe PkgconfigVersion)
+pkgConfEntryParser =
+    parsecOptionWith
+        entryParser
+        ( long "with-pkg-config-module"
+            <> help "Assume existence of pkg-config module NAME and VERSION"
+            <> metavar "NAME[=VERSION]"
+        )
   where
     entryParser = do
         pkgName <- Parsec.parsec
         pkgVersion <- optional (P.string "=" *> Parsec.parsec)
-        return $ PkgConfigDbEntry pkgName pkgVersion
+        return (pkgName, pkgVersion)
 
 solverConfigParser :: Parser SolverConfig
 solverConfigParser =
