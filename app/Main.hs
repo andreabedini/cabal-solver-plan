@@ -12,6 +12,7 @@ import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Traversable (for)
+import Distribution.Client.Dependency.Types (Solver (..))
 import Distribution.Client.GlobalFlags (RepoContext (..), withRepoContext')
 import Distribution.Client.IndexUtils (
     Index (..),
@@ -19,6 +20,14 @@ import Distribution.Client.IndexUtils (
     getSourcePackagesAtIndexState,
     updateRepoIndexCache,
  )
+import Distribution.Client.InstallPlan
+import Distribution.Client.ProjectConfig
+import Distribution.Client.ProjectConfig.Legacy
+import Distribution.Client.ProjectOrchestration
+import Distribution.Client.ProjectPlanning
+import Distribution.Client.ProjectPlanning (planPackages)
+import Distribution.Client.RebuildMonad (runRebuild)
+import Distribution.Client.SolverInstallPlan (SolverInstallPlan (SolverInstallPlan))
 import Distribution.Client.Types (
     RemoteRepo (..),
     Repo (..),
@@ -26,9 +35,11 @@ import Distribution.Client.Types (
     SourcePackageDb (SourcePackageDb),
     emptyRemoteRepo,
  )
+import Distribution.Fields
 import Distribution.InstalledPackageInfo (parseInstalledPackageInfo)
 import Distribution.Pretty qualified as Cabal
-import Distribution.Simple (CompilerInfo, PackageDB (..), compilerInfo)
+import Distribution.Simple (Compiler, CompilerInfo, PackageDB (..), compilerInfo)
+import Distribution.Simple.Flag
 import Distribution.Simple.GHC qualified as GHC
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import Distribution.Simple.PackageIndex qualified as Cabal.Index
@@ -44,9 +55,10 @@ import Distribution.Solver.Types.ComponentDeps qualified as ComponentDeps
 import Distribution.Solver.Types.OptionalStanza (showStanzas)
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb (..))
 import Distribution.Solver.Types.PkgConfigDb qualified as Solver
-import Distribution.Solver.Types.Progress (foldProgress)
+import Distribution.Solver.Types.Progress (Progress, foldProgress)
 import Distribution.System (Platform (..), buildPlatform)
 import Distribution.Types.PackageVersionConstraint (PackageVersionConstraint (..))
+import Distribution.Utils.LogProgress
 import Distribution.Verbosity (Verbosity)
 import Distribution.Verbosity qualified as Verbosity
 import Hackage.Security.Client qualified as Sec
@@ -67,7 +79,7 @@ main = do
     -- idependently; they lose their independence if we let the user refer to
     -- an installed version of GHC. So there are two cases here: with or
     -- without access to a real compiler.
-    (cinfo, Platform arch os, globalIPI) <-
+    (cinfo, platform@(Platform arch os), globalIPI) <-
         determineCompiler verbosity compilerSource
 
     extraIPIs <- foldMap readPackageDb extraPackageDbs
@@ -86,7 +98,7 @@ main = do
 
         pure $ PkgConfigDb $ Map.fromList $ systemPkgConfigEntries <> pkgConfigDbEntries
 
-    SourcePackageDb sourcePkgIndex sourcePkgPrefs <-
+    sourcePkgDb <-
         loadRepositories
             verbosity
             repositories
@@ -94,63 +106,83 @@ main = do
             cacheDir
             offline
 
-    let targetsPackageName =
-            Set.fromList [pn | PackageVersionConstraint pn _ <- targets]
+    -- this is needed if cabal.project has `import: https://`
+    let fakeHttpTransport = undefined
+        fakeDistDirLayout = undefined
+    pcs <-
+        -- This is real IO, TODO: try to keep it to bare minimum, e.g. read a single file
+        -- OR we get rid of it and we create a ProjectConfig by hand
+        runRebuild "" $
+            readProjectConfig
+                verbosity
+                fakeHttpTransport
+                NoFlag -- projectConfigIgnoreProject
+                NoFlag -- projectConfigConfigFile
+                fakeDistDirLayout
 
-        progress =
-            toProgress $
-                solve
-                    cinfo
-                    os
-                    arch
-                    pkgConfigDb
-                    constraints
-                    preferences
-                    flagAssignments
-                    solverConfig
-                    preferOldest
+    let projectConfig =
+            instantiateProjectConfigSkeletonWithCompiler
+                os
+                arch
+                cinfo
+                mempty -- FlagAssignment?
+                pcs
+
+    let solverSettings = resolveSolverSettings projectConfig
+
+    let compiler :: Compiler
+        compiler = _someconversion cinfo -- TODO: fill empty strings as compiler flags
+
+    -- These are all environment things that elaborateInstallPlan does not really need to know
+    let fakeCabalStoreDirLayout = undefined
+        fakeInstallDirs = undefined
+
+    let localPackages = []
+
+    let
+        solverPlan =
+            foldProgress (const id) error id $
+                planPackages
+                    verbosity
+                    compiler
+                    platform
+                    Modular
+                    solverSettings
                     installedPkgIndex
-                    sourcePkgIndex
-                    sourcePkgPrefs
-                    extraPreInstalled
-                    targetsPackageName
+                    sourcePkgDb
+                    pkgConfigDb
+                    localPackages
+                    mempty -- localPackagesEnabledStanzas
+    let (elaboratedPlan, elaboratedShared) =
+            foldLogProgress $
+                elaborateInstallPlan
+                    verbosity
+                    platform
+                    compiler
+                    defaultProgramDb -- ??
+                    pkgConfigDb
+                    fakeDistDirLayout
+                    fakeCabalStoreDirLayout
+                    solverPlan
+                    localPackages
+                    mempty -- sourcePackageHashes
+                    fakeInstallDirs
+                    (projectConfigShared projectConfig)
+                    (projectConfigAllPackages projectConfig)
+                    (projectConfigLocalPackages projectConfig)
+                    (getMapMappend (projectConfigSpecificPackage projectConfig))
 
-    result <-
-        foldProgress
-            -- step
-            (\step rest -> putStrLn step >> rest)
-            -- fail
-            (return . Left)
-            -- done
-            (return . Right . uncurry toCPs)
-            (showMessages progress)
+    let instantiatedPlan =
+            instantiateInstallPlan
+                fakeCabalStoreDirLayout
+                fakeInstallDirs
+                elaboratedShared
+                elaboratedPlan
 
-    case result of
-        Left (ExhaustiveSearch cs cm) ->
-            putStrLn $
-                unlines
-                    [ "Exhaustive search failed"
-                    , "conflict set: " ++ showConflictSet cs
-                    , "conflict map: " ++ show cm
-                    ]
-        Left BackjumpLimitReached ->
-            putStrLn "backjump limit reached"
-        Right cps ->
-            for_ cps $ \(CP pi flagAssignment optionalStanzaSet componentDeps) ->
-                putStrLn $
-                    unlines $
-                        unwords
-                            [ showPI pi
-                            , Cabal.prettyShow flagAssignment
-                            , showStanzas optionalStanzaSet
-                            ]
-                            : map
-                                ( \g ->
-                                    Cabal.prettyShow (fst (NE.head g))
-                                        ++ "\t"
-                                        ++ intercalate ", " (foldMap (map showPI . snd) g)
-                                )
-                                (NE.groupWith fst $ ComponentDeps.toList componentDeps)
+    putStrLn $ showInstallPlan instantiatedPlan
+
+foldLogProgress :: LogProgress a -> a
+foldLogProgress = _
 
 determineCompiler ::
     Verbosity ->
@@ -259,3 +291,10 @@ readPackageDb path = do
                         for_ warnings print
                         return ipi
             )
+
+-- TODO: see if we can read a project config without httpTransport
+-- using parseLegacyProjectConfig and convertLegacyProjectConfig
+--
+-- all this amounts to non supporting ifs and imports
+--
+-- convertLegacyProjectConfig :: LegacyProjectConfig -> ProjectConfig
