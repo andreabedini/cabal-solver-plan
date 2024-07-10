@@ -17,9 +17,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc:
+        ghc-version:
           - 9.6.6
-        cabal:
+        cabal-version:
           - 3.12.1.0
 
     steps:
