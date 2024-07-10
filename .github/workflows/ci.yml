@@ -25,11 +25,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: haskell-actions/setup@latest
-        id: setup
+      - uses: haskell-actions/setup@v2
         with:
-          ghc-version: ${{ inputs.ghc-version }}
-          cabal-version: ${{ inputs.cabal-version }}
+          ghc-version: ${{ matrix.ghc-version }}
+          cabal-version: ${{ matrix.cabal-version }}
 
       - name: Build dependencies
         run: cabal build --only-dependencies all -j
