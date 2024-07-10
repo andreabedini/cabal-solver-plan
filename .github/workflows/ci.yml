@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  merge_group:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-test:
+    name: Build and test
+
+    runs-on: [runs-on, runner=2cpu-linux-x64, "run-id=${{ github.run_id }}"]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        ghc:
+          - 9.6.6
+        cabal:
+          - 3.12.1.0
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: haskell-actions/setup@latest
+        id: setup
+        with:
+          ghc-version: ${{ inputs.ghc-version }}
+          cabal-version: ${{ inputs.cabal-version }}
+
+      - name: Build dependencies
+        run: cabal build --only-dependencies all -j
+
+      - name: Build project
+        run: cabal build all -j
+
+      - name: Test
+        run: cabal test all -j
