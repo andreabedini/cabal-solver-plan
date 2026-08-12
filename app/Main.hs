@@ -5,7 +5,6 @@
 import Control.Monad (unless)
 import Data.ByteString qualified as BS
 import Data.Foldable (for_)
-import Data.Functor ((<&>))
 import Data.List (intercalate)
 import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as Map
@@ -28,7 +27,7 @@ import Distribution.Client.Types (
  )
 import Distribution.InstalledPackageInfo (parseInstalledPackageInfo)
 import Distribution.Pretty qualified as Cabal
-import Distribution.Simple (CompilerInfo, PackageDB (..), compilerInfo)
+import Distribution.Simple (CompilerInfo, compilerInfo, PackageDBX (..))
 import Distribution.Simple.GHC qualified as GHC
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import Distribution.Simple.PackageIndex qualified as Cabal.Index
@@ -74,17 +73,16 @@ main = do
     let installedPkgIndex = globalIPI <> extraIPIs
 
     pkgConfigDb <- do
-        systemPkgConfigEntries <-
-            if useSystemPkgConfigDb
-                then
-                    Solver.readPkgConfigDb verbosity defaultProgramDb <&> \case
-                        PkgConfigDb m ->
-                            Map.toList m
-                        NoPkgConfigDb ->
-                            mempty
-                else mempty
-
-        pure $ PkgConfigDb $ Map.fromList $ systemPkgConfigEntries <> pkgConfigDbEntries
+        let cliPkgDb = if null pkgConfigDbEntries
+                       then Nothing
+                       else Just (Map.fromList pkgConfigDbEntries)
+        if useSystemPkgConfigDb
+            then
+                Solver.readPkgConfigDb verbosity defaultProgramDb >>= \case
+                    Just (PkgConfigDb m) -> pure (Just m <> cliPkgDb)
+                    Nothing -> pure cliPkgDb
+            else
+                pure cliPkgDb
 
     SourcePackageDb sourcePkgIndex sourcePkgPrefs <-
         loadRepositories
@@ -103,7 +101,7 @@ main = do
                     cinfo
                     os
                     arch
-                    pkgConfigDb
+                    (PkgConfigDb <$> pkgConfigDb)
                     constraints
                     preferences
                     flagAssignments
@@ -165,7 +163,7 @@ determineCompiler verbosity = \case
         let platform = fromMaybe buildPlatform mPlatform
         installedPkgIndex <-
             if useGlobalPackageDb
-                then GHC.getInstalledPackages verbosity compiler [GlobalPackageDB] programdb
+                then GHC.getInstalledPackages verbosity compiler Nothing [GlobalPackageDB] programdb
                 else mempty
         return (compilerInfo compiler, platform, installedPkgIndex)
 

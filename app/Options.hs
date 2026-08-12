@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{- HLINT ignore "Functor law" -}
 
 module Options (
     parseOptions,
@@ -29,7 +30,6 @@ import Distribution.Pretty qualified as Cabal
 import Distribution.Simple (AbiTag (..), CompilerInfo (..), PackageName, PkgconfigName)
 import Distribution.Solver.Modular (PruneAfterFirstSuccess (..), SolverConfig (..))
 import Distribution.Solver.Types.Settings (
-    AllowBootLibInstalls (..),
     AvoidReinstalls (..),
     CountConflicts (..),
     EnableBackjumping (..),
@@ -306,15 +306,6 @@ solverConfigParser =
                     auto
                     ( long "strong-flags"
                         <> help "Do not defer flag choices (this used to be the default in cabal-install <= 1.20)."
-                        <> value False
-                        <> showDefault
-                    )
-            )
-        <*> ( AllowBootLibInstalls
-                <$> option
-                    auto
-                    ( long "allow-boot-library-installs"
-                        <> help "Allow cabal to install base, ghc-prim, integer-simple, integer-gmp, and template-haskell."
                         <> value False
                         <> showDefault
                     )

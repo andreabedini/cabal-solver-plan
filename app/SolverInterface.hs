@@ -53,7 +53,7 @@ solve ::
     CompilerInfo ->
     OS ->
     Arch ->
-    PkgConfigDb ->
+    Maybe PkgConfigDb ->
     [UserConstraint] ->
     [PackageVersionConstraint] ->
     Map PackageName PD.FlagAssignment ->
