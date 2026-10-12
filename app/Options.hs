@@ -75,6 +75,7 @@ data Options = Options
     , extraPreInstalled :: [(PackageId, ComponentName)]
     , repositories :: [Either URI RemoteRepo]
     , indexTar :: Maybe FilePath
+    , localPackages :: [FilePath]
     , indexUri :: URI
     , mTotalIndexState :: Maybe TotalIndexState
     , useSystemPkgConfigDb :: Bool
@@ -110,6 +111,13 @@ opts = info (s <**> helper) mods
                         <> help "Read source packages from the package index (01-index.tar) at PATH. Never uses the network."
                     )
                 )
+            <*> many
+                ( strOption
+                    ( long "local-package"
+                        <> metavar "PATH"
+                        <> help "A local package (as in cabal.project's packages:): a directory with one .cabal file, or the .cabal file. Local packages are always targets."
+                    )
+                )
             <*> option
                 (maybeReader parseRepositoryUri)
                 ( long "index-uri"
@@ -134,9 +142,9 @@ opts = info (s <**> helper) mods
     mods =
         mconcat
             [ fullDesc
-            , header "header"
-            , footer "footer"
-            , progDesc "progDesc"
+            , header "cabal-solver-plan - run cabal-install's solver on inputs given on the command line"
+            , progDesc "Find a build plan for the TARGET packages. The solver trace goes to stderr, the plan to stdout."
+            , footer "See docs/plan-format.md for the --json output."
             ]
 
 extraPreInstalledParser :: Parser (PackageId, ComponentName)
@@ -205,7 +213,7 @@ compilerSourceParser =
                 )
             <*> switch
                 ( long "use-global-packagedb"
-                    <> help "Use the compiler's gloabl packagedb"
+                    <> help "Use the compiler's global package db"
                 )
 
     compilerInline =

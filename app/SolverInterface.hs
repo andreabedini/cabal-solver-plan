@@ -63,6 +63,7 @@ solve ::
     PackageIndex (SourcePackage loc) ->
     Map PackageName VersionRange ->
     [(PackageId, PD.ComponentName)] ->
+    [PackageId] ->
     Set PackageName ->
     RetryLog Message SolverFailure (Assignment, RevDepMap)
 solve
@@ -79,11 +80,20 @@ solve
     sourcePkgIndex
     sourcePkgPrefs
     extraPreInstalled
+    localPackages
     targets =
         Solver.solve solverConfig cinfo idx pkgConfigDb packagePreferences gcs targets
       where
         constraints :: [LabeledPackageConstraint]
-        constraints = mkConstraints (compilerInfoId cinfo) solverSettingConstraints solverSettingFlagAssignments
+        constraints =
+            mkConstraints (compilerInfoId cinfo) solverSettingConstraints solverSettingFlagAssignments
+                -- As cabal-install's pkgSpecifierConstraints: a local
+                -- package is always the version in its directory.
+                ++ [ LabeledPackageConstraint
+                        (PackageConstraint (ScopeTarget (pkgName pkgid)) (PackagePropertyVersion (thisVersion (pkgVersion pkgid))))
+                        ConstraintSourceUserTarget
+                   | pkgid <- localPackages
+                   ]
 
         packagePreferences :: PackageName -> PackagePreferences
         packagePreferences = interpretPackagesPreference targets preferenceDefault preferences

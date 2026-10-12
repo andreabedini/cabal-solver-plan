@@ -1,91 +1,77 @@
 # cabal-solver-plan
 
-Run cabal-install solver from inputs specified on the command line (most of them).
+Run cabal-install's dependency solver with every input given on the command line, and print the build plan: no `cabal.project` and no cabal-install configuration.
+
+The inputs are:
+- the compiler (a real `ghc`, or just its id with `--compiler-id`) and platform;
+- package dbs;
+- package indexes;
+- local packages;
+- constraints, flags and solver settings.
+
+The solver trace goes to stderr. The plan goes to stdout, as text, or as JSON with `--json` (see [docs/plan-format.md](docs/plan-format.md)).
+
+Build it with GHC 9.12 or 9.14:
 
 ```
-❯ cabal run -- cabal-solver-plan
-Missing: (--with-ghc[=GHC] | --compiler-id ARG)
-
-Usage: cabal-solver-plan (--with-ghc[=GHC] [--package-db GLOBAL|USER|PATH] |
-                           --compiler-id ARG [--abi-tag ARG]
-                           [(--compiler-id-compat ARG)] [(--language ARG)]
-                           [(--extension ARG)] [--os OS] [--arch ARCH]
-                           [--package-db PATH]) [--repository ARG]
-                         [--index-state ARG]
-                         [--pkgconfig-entry ARG | --use-system-pkgconfig]
-                         [--constraint ARG] [--flag ARG] [--reorder-goals]
-                         [--count-conflicts] [--fine-grained-conflicts]
-                         [--minimize-conflict-set] [--independent-goals]
-                         [--avoid-reinstalls] [--shadow-pkgs] [--strong-flags]
-                         [--allow-boot-lib-installs] [--only-constrainted ARG]
-                         [--max-backjumps ARG] [--enable-backjumping]
-                         [--solve-executables] [--verbosity ARG]
-                         [--prune-after-first-success] [--prefer-oldest]
-                         [--cache-dir ARG] [--offline] [TARGET]
+cabal build -w ghc-9.14.1
 ```
+
+Run `cabal-solver-plan --help` for all options.
 
 ## Examples
 
-Use the system ghc:
+Without a package index, the only packages are the ones GHC comes with (`--use-global-packagedb`):
 
 ```
-❯ cabal run -- cabal-solver-plan --with-ghc
-[__0] done
-```
-
-You need to specify one or more targets. E.g. let's find a plan for `mtl`.
-
-```
-❯ cabal run -- cabal-solver-plan --with-ghc mtl
-[__0] unknown package: mtl (user goal)
-[__0] fail (backjumping, conflict set: mtl)
-Exhaustive search failed
-conflict set: mtl
-conflict map: fromList [(P (Q (PackagePath DefaultNamespace QualToplevel) (PackageName "mtl")),1)]
-```
-
-Of course, what's `mtl` after all?
-
-```
-❯ cabal run -- cabal-solver-plan --with-ghc --package-db global mtl
-[__0] trying: mtl-2.2.2/installed-2.2.2 (user goal)
-[__1] trying: base-4.17.1.0/installed-4.17.1.0 (dependency of mtl)
-[__2] trying: rts-1.0.2/installed-1.0.2 (dependency of base)
-[__3] trying: ghc-prim-0.9.0/installed-0.9.0 (dependency of base)
-[__4] trying: ghc-bignum-1.3/installed-1.3 (dependency of base)
-[__5] next goal: transformers (dependency of mtl)
-[__5] trying: transformers-0.5.6.2/installed-0.5.6.2
+❯ cabal-solver-plan --with-ghc ghc-9.12.2 --use-global-packagedb mtl
+[__0] trying: mtl-2.3.1/installed-6d75 (user goal)
+[__1] trying: base-4.21.0.0/installed-b7a5 (dependency of mtl)
+…
 [__6] done
 rts-1.0.2/installed-1.0.2
 
-ghc-prim-0.9.0/installed-0.9.0
-lib     rts-1.0.2/installed-1.0.2
-
-ghc-bignum-1.3/installed-1.3
-lib     ghc-prim-0.9.0/installed-0.9.0
-
-base-4.17.1.0/installed-4.17.1.0
-lib     ghc-bignum-1.3/installed-1.3, ghc-prim-0.9.0/installed-0.9.0, rts-1.0.2/installed-1.0.2
-
-transformers-0.5.6.2/installed-0.5.6.2
-lib     base-4.17.1.0/installed-4.17.1.0
-
-mtl-2.2.2/installed-2.2.2
-lib     base-4.17.1.0/installed-4.17.1.0, transformers-0.5.6.2/installed-0.5.6.2
+ghc-prim-0.13.0/installed-00de
+lib	rts-1.0.2/installed-1.0.2
+…
 ```
 
-Something from hackage
+Download (or update) Hackage's index into `--cache-dir` (default `_cache`) and solve with it:
 
 ```
- cabal-solver-plan --with-ghc --package-db global --repository https://hackage.haskell.org aeson
-Loading repository1:https://hackage.haskell.org, checking for updates ... updates available, refreshing the cache ...
- done
-Active repositories: repository1:merge
-Total index-state: repository1 2023-08-04T02:18:50Z
-[__0] trying: aeson-2.2.0.0 (user goal)
-...
-[140] trying: aeson:+ordered-keymap[141] done
-...
-aeson-2.2.0.0 +ordered-keymap
-lib     OneTuple-0.4.1.1, QuickCheck-2.14.3, base-4.17.1.0/installed-4.17.1.0, bytestring-0.11.4.0/installed-0.11.4.0, containers-0.6.7/installed-0.6.7, data-fix-0.3.2, deepseq-1.4.8.0/installed-1.4.8.0, dlist-1.0, exceptions-0.10.5/installed-0.10.5, generically-0.1.1, ghc-prim-0.9.0/installed-0.9.0, hashable-1.4.3.0, indexed-traversable-0.1.2.1, integer-conversion-0.1, network-uri-2.6.4.2, primitive-0.8.0.0, scientific-0.3.7.0, semialign-1.3, strict-0.5, tagged-0.8.7, template-haskell-2.19.0.0/installed-2.19.0.0, text-2.0.2/installed-2.0.2, text-iso8601-0.1, text-short-0.1.5, th-abstraction-0.5.0.0, these-1.2, time-1.12.2/installed-1.12.2, time-compat-1.9.6.1, unordered-containers-0.2.19.1, uuid-types-1.0.5, vector-0.13.0.0, witherable-0.4.2
+cabal-solver-plan --with-ghc ghc-9.12.2 --use-global-packagedb \
+  --repository https://hackage.haskell.org/ aeson
 ```
+
+Use a repository again without contacting the network:
+
+```
+cabal-solver-plan --with-ghc ghc-9.12.2 --use-global-packagedb \
+  --repository https://hackage.haskell.org/ --offline aeson
+```
+
+Solve from an index tar alone, at a fixed index-state, and print the plan as JSON. The plan includes the hashes, sizes and `.cabal` revisions needed to fetch every package, all read from the index:
+
+```
+cabal-solver-plan --with-ghc ghc-9.12.2 --use-global-packagedb \
+  --index ~/index-copy/01-index.tar --index-state 2026-06-01T00:00:00Z \
+  --json shake > shake.json
+```
+
+See [examples/](examples/) for the resulting plans.
+
+Plan for a local package (a directory with a `.cabal` file, as in `cabal.project`'s `packages:`):
+
+```
+cabal-solver-plan --with-ghc ghc-9.12.2 --use-global-packagedb \
+  --index ~/index-copy/01-index.tar --local-package ./my-package --json
+```
+
+Without a compiler, give its id and platform instead of `--with-ghc`:
+
+```
+cabal-solver-plan --compiler-id ghc-9.12.2 --platform x86_64-linux \
+  --index ~/index-copy/01-index.tar --json text
+```
+
+With `--compiler-id` there are no pre-installed packages, so the solver will want to build `base` and other boot packages from source, which usually fails. Use `--package-db` (a directory of `.conf` files) or `--with-preinstalled PKGID[:LIB]` to tell it what is installed.

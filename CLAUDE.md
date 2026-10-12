@@ -38,6 +38,7 @@ All sources are in `app/`. This tool reaches into cabal-install **internals** (`
 - **`Main.hs`**: wires everything together:
   - `determineCompiler` returns compiler info, platform and the global installed package index.
   - `readPackageDb` reads `*.conf` files straight from a directory, so `--package-db` does not need `ghc-pkg`.
+  - `readLocalPackage` reads a `--local-package`. As cabal-install's `basicInstallPolicy` does, local packages shadow index packages with the same id, hide installed ones, are pinned with a `ScopeTarget` version constraint (in `solve`), and are always targets.
   - `loadRepositories` handles `--repository`. Unless `--offline` is given, it updates the repository through hackage-security and cabal-install's `withRepoContext'`. Repositories are always treated as secure, can be `file:` URIs, and are cached in `--cache-dir` (default `_cache`). A bare URI gets the auto-generated name `repositoryN`. `--index PATH` skips all of this and uses an index tar as is.
   - Either way, indexes are read by `IndexTar`, never through cabal-install's `01-index.cache`.
   - It then calls `SolverInterface.solve`, and drives the resulting `Progress` with `foldProgress`/`summarizeMessages` to print the trace. With `--json` it passes the result to `Plan`.

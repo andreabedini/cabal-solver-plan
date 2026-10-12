@@ -38,23 +38,28 @@ import Distribution.Solver.Modular.Package (showPI)
 import Distribution.Solver.Modular.RetryLog (toProgress)
 import Distribution.Solver.Types.ComponentDeps qualified as ComponentDeps
 import Distribution.Solver.Types.OptionalStanza (showStanzas)
+import Distribution.Solver.Types.PackageIndex qualified as SourceIndex
+import Distribution.Solver.Types.SourcePackage (SourcePackage (..))
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb (..))
 import Distribution.Solver.Types.PkgConfigDb qualified as Solver
 import Distribution.Solver.Types.Progress (foldProgress)
 import Distribution.System (Platform (..), buildPlatform)
+import Distribution.Types.PackageId (PackageIdentifier (..))
 import Distribution.Types.PackageVersionConstraint (PackageVersionConstraint (..))
+import Distribution.PackageDescription (GenericPackageDescription, package, packageDescription)
+import Distribution.PackageDescription.Parsec (parseGenericPackageDescriptionMaybe)
 import Distribution.Verbosity (Verbosity)
 import Distribution.Verbosity qualified as Verbosity
 import Hackage.Security.Client qualified as Sec
 import IndexTar (Index (..), Repository (..), indexSourcePackages, readIndex)
 import Network.URI (URI (..), URIAuth (..))
 import Options
-import Plan (PlanInputs (..), makePlan, renderPlanJson)
+import Plan (PackageSource (..), PlanInputs (..), makePlan, renderPlanJson)
 import SetupDeps (applyDefaultSetupDeps)
 import SolverInterface (solve)
-import System.Directory (createDirectoryIfMissing, doesFileExist, listDirectory)
+import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, listDirectory)
 import System.Exit (exitFailure)
-import System.FilePath (takeExtension, (</>))
+import System.FilePath (takeDirectory, takeExtension, (</>))
 import System.IO (hPutStr, hPutStrLn, stderr)
 import Prelude hiding (pi)
 
@@ -76,7 +81,7 @@ main = do
         determineCompiler verbosity compilerSource
 
     extraIPIs <- for extraPackageDbs $ \path -> (,) path <$> readPackageDb path
-    let installedPkgIndex = globalIPI <> foldMap snd extraIPIs
+    let installedPkgIndex0 = globalIPI <> foldMap snd extraIPIs
         -- Which package db each installed unit comes from.
         installedDb =
             Map.fromList
@@ -115,15 +120,23 @@ main = do
                     ++ ", index-state " ++ Cabal.prettyShow (indexTimestamp index)
             return index
 
+    locals <- traverse readLocalPackage localPackages
+
+    -- Local packages replace the index packages with the same id, and
+    -- installed ones are hidden (as cabal-install's basicInstallPolicy).
     -- As cabal-install does, give Custom and Hooks packages without a
     -- custom-setup stanza default setup dependencies.
-    sourcePkgIndex <-
-        fmap (applyDefaultSetupDeps cinfo platform) . mconcat
-            <$> traverse indexSourcePackages indexes
+    sourcePkgIndex <- do
+        fromIndexes <- mconcat <$> traverse indexSourcePackages indexes
+        let fromRepositories = fmap (\sp -> sp{srcpkgSource = FromRepository (srcpkgSource sp)}) fromIndexes
+        return $
+            fmap (applyDefaultSetupDeps cinfo platform) $
+                foldl (flip SourceIndex.insert) fromRepositories locals
+    let installedPkgIndex = foldl (flip Cabal.Index.deleteSourcePackageId) installedPkgIndex0 (map srcpkgPackageId locals)
     let sourcePkgPrefs = Map.unionsWith (const id) (map indexPreferences indexes)
 
     let targetsPackageName =
-            Set.fromList [pn | PackageVersionConstraint pn _ <- targets]
+            Set.fromList ([pn | PackageVersionConstraint pn _ <- targets] ++ map (pkgName . srcpkgPackageId) locals)
 
         progress =
             toProgress $
@@ -141,6 +154,7 @@ main = do
                     sourcePkgIndex
                     sourcePkgPrefs
                     extraPreInstalled
+                    (map srcpkgPackageId locals)
                     targetsPackageName
 
     result <-
@@ -287,6 +301,30 @@ loadRepositories verbosity repositories cacheDir offline = do
                 (\num -> either (mkRepo ("repository" ++ show num)) id)
                 [1 :: Int ..]
                 repositories
+
+-- | Read a local package: a directory with one .cabal file, or the .cabal
+-- file itself.
+readLocalPackage :: FilePath -> IO (SourcePackage PackageSource)
+readLocalPackage path = do
+    isDir <- doesDirectoryExist path
+    (dir, cabalFile) <-
+        if isDir
+            then
+                filter ((== ".cabal") . takeExtension) <$> listDirectory path >>= \case
+                    [f] -> return (path, path </> f)
+                    fs -> fail ("expected one .cabal file in " ++ path ++ ", found " ++ show (length fs))
+            else return (takeDirectory path, path)
+    content <- BS.readFile cabalFile
+    gpd <- case parseGenericPackageDescriptionMaybe content of
+        Just gpd -> return (gpd :: GenericPackageDescription)
+        Nothing -> fail ("cannot parse " ++ cabalFile)
+    return
+        SourcePackage
+            { srcpkgPackageId = package (packageDescription gpd)
+            , srcpkgDescription = gpd
+            , srcpkgSource = LocalPackage dir
+            , srcpkgDescrOverride = Nothing
+            }
 
 -- | Read a packagedb. Cabal parses the output of ghc-pkg but we cannot
 -- assume we have access to ghc-pkg, so we read the files from a given

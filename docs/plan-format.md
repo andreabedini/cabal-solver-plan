@@ -53,6 +53,7 @@ The output is pretty-printed with a fixed key order, so the same inputs give byt
 - `build-type` is the package's `build-type` (`Simple`, `Configure`, `Custom` or `Hooks`).
 - `src.repo` is the repository URI. It always ends in `/`, so the tarball is at `<repo>package/<id>.tar.gz`.
 - `src.sha256` and `src.size` describe that tarball. They come from the package's `package.json` in the index (hackage-security target metadata), and are `null` if the index has none.
+- A local package (`--local-package`) has `"src": {"type": "local", "path": "<dir>"}`, with the directory as given, and `"cabal-file": null`.
 - `cabal-file` is the revision of the `.cabal` file the plan was made with. It can be downloaded from `<repo>package/<id>/revision/<revision>.cabal`. Revision 0 is the file uploaded with the package, and each later index entry for the file is a new revision; only entries up to the index-state count.
 
 ## Units
@@ -119,3 +120,5 @@ The id of a configured unit is `<name>-<version>`, then a component suffix (none
 - the ids of all dependencies.
 
 The ids look like cabal-install's, but the hashes differ from cabal-install's.
+
+The sources of a local package can change at any time, so its units get fixed ids, as in cabal-install: `<name>-<version>-inplace` plus the component suffix, for example `demo-0.1.0.0-inplace-e-demo`. Local packages are always targets.

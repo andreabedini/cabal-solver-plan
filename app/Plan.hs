@@ -9,6 +9,7 @@
 --
 -- See docs/plan-format.md for the output format.
 module Plan (
+    PackageSource (..),
     PlanInputs (..),
     Plan,
     makePlan,
@@ -75,13 +76,20 @@ import Distribution.Types.ExeDependency (ExeDependency (..))
 import Distribution.Types.VersionRange (thisVersion)
 import IndexTar (CabalFileInfo (..), Index (..), Repository (..), SdistInfo (..), cabalFileInfo, sdistInfo)
 
+-- | Where a source package comes from.
+data PackageSource
+    = FromRepository Repository
+    | -- | A local package, in the given directory.
+      LocalPackage FilePath
+    deriving (Eq, Show)
+
 data PlanInputs = PlanInputs
     { planCompiler :: CompilerInfo
     , planPlatform :: Platform
     , planInstalled :: InstalledPackageIndex
     , planInstalledDb :: Map UnitId String
     -- ^ Which package db each installed unit comes from ("global" or a path).
-    , planSourceIndex :: PackageIndex (SourcePackage Repository)
+    , planSourceIndex :: PackageIndex (SourcePackage PackageSource)
     , planIndexes :: [Index]
     , planTargets :: Set PackageName
     }
@@ -89,14 +97,14 @@ data PlanInputs = PlanInputs
 -- | A package as the solver chose it.
 data Resolved
     = ResolvedInstalled UnitId PackageId
-    | ResolvedSource (SolverPackage Repository)
+    | ResolvedSource (SolverPackage PackageSource)
 
 data BuildStyle = PerComponent | WholePackage
     deriving (Eq)
 
 -- | A source package, finalised with the flags and stanzas the solver chose.
 data Elaborated = Elaborated
-    { elabSolverPackage :: SolverPackage Repository
+    { elabSolverPackage :: SolverPackage PackageSource
     , elabPackageId :: PackageId
     , elabFlags :: FlagAssignment
     -- ^ Every flag of the package, defaults included.
@@ -130,7 +138,7 @@ data UnitKind
       SourceUnit Elaborated (Maybe ComponentName)
 
 data PackageInfo = PackageInfo
-    { packageRepository :: Repository
+    { packageSource :: PackageSource
     , packageCabalFile :: Maybe CabalFileInfo
     , packageSdist :: Maybe SdistInfo
     }
@@ -155,11 +163,13 @@ makePlan inputs@PlanInputs{..} cps = do
 
     infos <- fmap Map.fromList $ forM (Map.elems elaborated) $ \e -> do
         let pkgid = elabPackageId e
-            repo = srcpkgSource (solverPkgSource (elabSolverPackage e))
-            index = find ((== repo) . indexRepository) planIndexes
+            source = srcpkgSource (solverPkgSource (elabSolverPackage e))
+            index = case source of
+                FromRepository repo -> find ((== repo) . indexRepository) planIndexes
+                LocalPackage _ -> Nothing
         cabalFile <- maybe (pure Nothing) (`cabalFileInfo` pkgid) index
         sdist <- maybe (pure Nothing) (`sdistInfo` pkgid) index
-        return (pkgid, PackageInfo repo cabalFile sdist)
+        return (pkgid, PackageInfo source cabalFile sdist)
 
     let units = makeUnits inputs elaborated infos
 
@@ -229,7 +239,7 @@ resolvedKey = \case
     ResolvedInstalled uid _ -> Left uid
     ResolvedSource sp -> Right (srcpkgPackageId (solverPkgSource sp))
 
-elaborate :: PlanInputs -> SolverPackage Repository -> Elaborated
+elaborate :: PlanInputs -> SolverPackage PackageSource -> Elaborated
 elaborate PlanInputs{..} sp =
     Elaborated
         { elabSolverPackage = sp
@@ -387,8 +397,12 @@ makeUnits PlanInputs{..} elaborated infos = units
             Nothing -> error ("not in the plan: " ++ prettyShow pkgid)
 
     makeUnitId :: Elaborated -> Maybe ComponentName -> Unit -> String
-    makeUnitId e mcn unit =
-        prettyShow (elabPackageId e) ++ componentSuffix mcn ++ "-" ++ showHashValue (hashValue (LBS.fromStrict (Text.encodeUtf8 (Text.pack hashInput))))
+    makeUnitId e mcn unit = case packageSource info of
+        -- The sources of a local package can change at any time, so as
+        -- cabal-install does we give it a fixed "inplace" id.
+        LocalPackage _ -> prettyShow (elabPackageId e) ++ "-inplace" ++ componentSuffix mcn
+        FromRepository _ ->
+            prettyShow (elabPackageId e) ++ componentSuffix mcn ++ "-" ++ showHashValue (hashValue (LBS.fromStrict (Text.encodeUtf8 (Text.pack hashInput))))
       where
         info = infos Map.! elabPackageId e
         hashInput =
@@ -480,6 +494,7 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
         , "src"
         , "cabal-file"
         , "repo"
+        , "path"
         , "revision"
         , "sha256"
         , "size"
@@ -500,13 +515,19 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
             , "name" .= unPackageName (pkgName (elabPackageId e))
             , "version" .= prettyShow (pkgVersion (elabPackageId e))
             , "build-type" .= prettyShow (PD.buildType (elabDescription e))
-            , "src"
-                .= object
-                    [ "type" .= ("repo-tar" :: String)
-                    , "repo" .= show (repositoryUri packageRepository)
-                    , "sha256" .= fmap sdistSha256 packageSdist
-                    , "size" .= fmap sdistSize packageSdist
-                    ]
+            , "src" .= case packageSource of
+                FromRepository repo ->
+                    object
+                        [ "type" .= ("repo-tar" :: String)
+                        , "repo" .= show (repositoryUri repo)
+                        , "sha256" .= fmap sdistSha256 packageSdist
+                        , "size" .= fmap sdistSize packageSdist
+                        ]
+                LocalPackage path ->
+                    object
+                        [ "type" .= ("local" :: String)
+                        , "path" .= path
+                        ]
             , "cabal-file"
                 .= fmap
                     ( \CabalFileInfo{..} ->
