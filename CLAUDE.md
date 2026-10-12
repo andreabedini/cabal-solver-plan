@@ -9,20 +9,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```sh
-cabal build -w ghc-9.14.1                                          # build the exe
+cabal build -w ghc-9.14.1                                          # build the exe (9.12.2 also works)
 cabal run -w ghc-9.14.1 -- cabal-solver-plan --with-ghc ghc-9.14.1 mtl   # run (args after --)
 fourmolu -i app                                                    # format (config: fourmolu.yaml)
 ```
 
 There is no test suite. To check that a change works, run the README examples. Use `--use-global-packagedb` to load GHC's global package DB. A `--repository` URI needs a trailing slash (`https://hackage.haskell.org/`).
 
-CI (`.github/workflows/ci.yml`) runs `cabal build all` and `cabal test all` with GHC 9.14.1 and cabal 3.18.1.0.
+CI (`.github/workflows/ci.yml`) runs `cabal build all` and `cabal test all` with GHC 9.12.2 and 9.14.1, and cabal 3.18.1.0.
 
 The repo is a jj (Jujutsu) colocated repo, so use `jj`, not `git`, for VCS operations.
 
 ### Dependency bounds
 
-The bounds in `cabal-solver-plan.cabal` are `^>=` on the latest versions that build with GHC 9.14.1: `base ^>= 4.22` and `Cabal`/`Cabal-syntax`/`cabal-install`/`cabal-install-solver ^>= 3.18.1.0`. Each major Cabal release changes the solver and `Distribution.Simple` internals this tool uses, so bump the four Cabal packages together and fix the compile errors. Do not reach for `allow-newer`: with GHC 9.14.1, `allow-newer: all` picks a `process` that fails to build.
+The bounds in `cabal-solver-plan.cabal` accept the boot packages of both GHC 9.12 and 9.14 (`base ^>= 4.21.0.0 || ^>= 4.22.0.0`, and likewise `containers`, `time`); everything else is `^>=` the latest release, including `Cabal`/`Cabal-syntax`/`cabal-install`/`cabal-install-solver ^>= 3.18.1.0`. Each major Cabal release changes the solver and `Distribution.Simple` internals this tool uses, so bump the four Cabal packages together and fix the compile errors. Do not reach for `allow-newer`: with GHC 9.14.1, `allow-newer: all` picks a `process` that fails to build.
 
 ## Architecture
 
