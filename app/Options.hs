@@ -74,6 +74,8 @@ data Options = Options
     , extraPackageDbs :: [FilePath]
     , extraPreInstalled :: [(PackageId, ComponentName)]
     , repositories :: [Either URI RemoteRepo]
+    , indexTar :: Maybe FilePath
+    , indexUri :: URI
     , mTotalIndexState :: Maybe TotalIndexState
     , useSystemPkgConfigDb :: Bool
     , pkgConfigDbEntries :: [(PkgconfigName, Maybe PkgconfigVersion)]
@@ -84,6 +86,7 @@ data Options = Options
     , preferOldest :: PreferOldest
     , cacheDir :: FilePath
     , offline :: Bool
+    , jsonOutput :: Bool
     , targets :: [PackageVersionConstraint]
     }
 
@@ -100,6 +103,21 @@ opts = info (s <**> helper) mods
             <*> many (strOption (long "package-db" <> metavar "PATH" <> help "Load packagedb at PATH"))
             <*> many extraPreInstalledParser
             <*> many repositoryParser
+            <*> optional
+                ( strOption
+                    ( long "index"
+                        <> metavar "PATH"
+                        <> help "Read source packages from the package index (01-index.tar) at PATH. Never uses the network."
+                    )
+                )
+            <*> option
+                (maybeReader parseRepositoryUri)
+                ( long "index-uri"
+                    <> metavar "URI"
+                    <> help "The repository the packages in --index are downloaded from."
+                    <> value hackageUri
+                    <> showDefault
+                )
             <*> optional (parsecOption (long "index-state"))
             <*> switch (long "use-system-pkg-config" <> help "Use system pkg-config.")
             <*> many pkgConfEntryParser
@@ -109,7 +127,8 @@ opts = info (s <**> helper) mods
             <*> solverConfigParser
             <*> (PreferOldest <$> switch (long "prefer-oldest"))
             <*> strOption (long "cache-dir" <> value "_cache")
-            <*> flag False True (long "offline")
+            <*> flag False True (long "offline" <> help "Do not update repositories; fail if a repository has not been downloaded.")
+            <*> switch (long "json" <> help "Print the plan as JSON (see docs/plan-format.md).")
             <*> many (parsecArgument (metavar "TARGET"))
 
     mods =
@@ -128,13 +147,38 @@ extraPreInstalledParser = parsecOptionWith g (long "with-preinstalled")
         libName <- optional (P.string ":" *> Parsec.parsec)
         return (pkgId, fromMaybe (CLibName LMainLibName) libName)
 
--- NOTE: all this it to allow users to use a shorter form for repositories
--- cabal requires repo-name:repo-uri but we try to make up a repo-name
--- from the uri. Also not the clearest code.
+-- | A repository is given as NAME:URI, as in cabal, or as just a URI, in
+-- which case we make up a name. Since NAME:URI is also an absolute URI
+-- (with scheme NAME), we take it as a plain URI only if it looks like one.
 repositoryParser :: Parser (Either URI RemoteRepo)
-repositoryParser = option g (long "repository")
+repositoryParser =
+    option
+        (eitherReader parseRepository)
+        ( long "repository"
+            <> metavar "[NAME:]URI"
+            <> help "Download source packages from the (secure) repository at URI."
+        )
   where
-    g = Left <$> maybeReader parseAbsoluteURI <|> Right <$> eitherReader Parsec.eitherParsec
+    parseRepository s
+        | Just uri <- parseRepositoryUri s
+        , uriScheme uri `elem` ["http:", "https:", "file:"] =
+            Right (Left uri)
+        | otherwise = do
+            repo <- Parsec.eitherParsec s
+            return (Right repo{remoteRepoURI = withTrailingSlash (remoteRepoURI repo)})
+
+-- | Parse a repository URI. Its path always ends in a slash, since the
+-- files of the repository are found relative to it.
+parseRepositoryUri :: String -> Maybe URI
+parseRepositoryUri = fmap withTrailingSlash . parseAbsoluteURI
+
+withTrailingSlash :: URI -> URI
+withTrailingSlash uri
+    | null (uriPath uri) || last (uriPath uri) /= '/' = uri{uriPath = uriPath uri ++ "/"}
+    | otherwise = uri
+
+hackageUri :: URI
+hackageUri = fromMaybe (error "hackageUri") (parseRepositoryUri "https://hackage.haskell.org/")
 
 data CompilerSource
     = CompilerInline

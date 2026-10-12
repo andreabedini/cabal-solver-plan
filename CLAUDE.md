@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`cabal-solver-plan` is a single Haskell executable that runs cabal-install's modular dependency solver directly, with every solver input given on the command line instead of coming from a `cabal.project`. These inputs are the compiler, platform, installed package DBs, source repositories, pkg-config DB, constraints, flags and solver settings. It prints the solver's trace and then either the install plan (one block per package, listing deps by component) or the conflict set. See `README.md` for example invocations and output.
+`cabal-solver-plan` is a single Haskell executable that runs cabal-install's modular dependency solver directly, with every solver input given on the command line instead of coming from a `cabal.project`. These inputs are the compiler, platform, installed package DBs, source repositories, pkg-config DB, constraints, flags and solver settings. It prints the solver's trace to stderr, then either the install plan on stdout or the conflict set. The plan is text by default, or JSON with `--json`: units with deterministic ids, hashes and sizes, in the format specified in `docs/plan-format.md`. See `README.md` for example invocations.
+
+The JSON plan is consumed by timbuktu (`../timbuktu`, buck2 rules for cabal packages, `rules/haskell/cabal_install/`). Keep `docs/plan-format.md` in sync with `Plan.hs`; a format change needs a matching change there.
 
 ## Commands
 
@@ -14,7 +16,9 @@ cabal run -w ghc-9.14.1 -- cabal-solver-plan --with-ghc ghc-9.14.1 mtl   # run (
 fourmolu -i app                                                    # format (config: fourmolu.yaml)
 ```
 
-There is no test suite. To check that a change works, run the README examples. Use `--use-global-packagedb` to load GHC's global package DB. A `--repository` URI needs a trailing slash (`https://hackage.haskell.org/`).
+There is no test suite. To check that a change works, run the README examples. Use `--use-global-packagedb` to load GHC's global package DB.
+
+The acceptance check for the JSON plan is to compare it with cabal-install 3.14.2's plans for `network` and `shake`. These are embedded in `../timbuktu/examples/plan/{network,shake}/BUCK` and were made with GHC 9.12.2 and `--index-state 2026-06-01T00:00:00Z`. Compare by package, version, component, flags and dependency edges; unit ids differ by design. Run against a copy of the Hackage index (`--index <copy>/01-index.tar`), never the one in `~/.cache/cabal`.
 
 CI (`.github/workflows/ci.yml`) runs `cabal build all` and `cabal test all` with GHC 9.12.2 and 9.14.1, and cabal 3.18.1.0.
 
@@ -34,8 +38,16 @@ All sources are in `app/`. This tool reaches into cabal-install **internals** (`
 - **`Main.hs`**: wires everything together:
   - `determineCompiler` returns compiler info, platform and the global installed package index.
   - `readPackageDb` reads `*.conf` files straight from a directory, so `--package-db` does not need `ghc-pkg`.
-  - `loadRepositories` uses hackage-security plus cabal-install's `withRepoContext'` / `getSourcePackagesAtIndexState`. Repositories are always treated as secure, can be `file:` URIs, are cached in `--cache-dir` (default `_cache`), and are refreshed unless `--offline` is given. A bare URI gets the auto-generated name `repositoryN`.
-  - It then calls `SolverInterface.solve`, and drives the resulting `Progress` with `foldProgress`/`showMessages` to print the trace and the result.
+  - `loadRepositories` handles `--repository`. Unless `--offline` is given, it updates the repository through hackage-security and cabal-install's `withRepoContext'`. Repositories are always treated as secure, can be `file:` URIs, and are cached in `--cache-dir` (default `_cache`). A bare URI gets the auto-generated name `repositoryN`. `--index PATH` skips all of this and uses an index tar as is.
+  - Either way, indexes are read by `IndexTar`, never through cabal-install's `01-index.cache`.
+  - It then calls `SolverInterface.solve`, and drives the resulting `Progress` with `foldProgress`/`summarizeMessages` to print the trace. With `--json` it passes the result to `Plan`.
+- **`IndexTar.hs`**: reads a Hackage `01-index.tar` directly. It walks the tar headers, seeking over contents, and keeps the entries up to the index-state: every `.cabal` revision, `package.json` and `preferred-versions`. It reads contents lazily (one `.cabal` file per package the solver looks at), and provides cabal-file revision, sha256 and size, and sdist sha256 and size. Walking the about 1 GB index dominates run time (about 4 s).
+- **`Plan.hs`**: turns the solver result into units:
+  - Its own version of `convCP` maps solver results to packages.
+  - `finalizePD` with the solver's flags and stanzas decides components.
+  - It chooses per-component vs whole-package with cabal-install **3.14**'s rule, deliberately not 3.18's (see `elaborate`).
+  - Unit ids hash their dependencies' ids, using a lazily tied `Map`.
+  - It prunes to the targets' closure, orders dependencies first, and renders JSON with `aeson-pretty` and a fixed key order.
 - **`SolverInterface.hs`**: `solve` is a trimmed re-implementation of cabal-install's solver entry point, built by hand:
   - It converts user constraints and flags into `LabeledPackageConstraint`s, including the setup-`Cabal` min/max version constraints copied from cabal-install (`setupMinCabalVersion`, `setupMaxCabalVersion`).
   - It interprets package preferences (`PreferLatestForSelected`, or `PreferAllOldest` with `--prefer-oldest`).
