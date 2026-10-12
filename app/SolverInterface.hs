@@ -248,6 +248,9 @@ interpretPackagesPreference selected defaultPref prefs =
 -- release).
 --
 -- etc.
+-- GHC 9.10  needs  Cabal >= 3.12
+-- GHC 9.6   needs  Cabal >= 3.10
+-- GHC 9.4   needs  Cabal >= 3.8
 -- GHC 9.2   needs  Cabal >= 3.6
 -- GHC 9.0   needs  Cabal >= 3.4
 -- GHC 8.10  needs  Cabal >= 3.2
@@ -255,17 +258,19 @@ interpretPackagesPreference selected defaultPref prefs =
 -- GHC 8.6   needs  Cabal >= 2.4
 -- GHC 8.4   needs  Cabal >= 2.2
 -- GHC 8.2   needs  Cabal >= 2.0
--- GHC 8.0   needs  Cabal >= 1.24
--- GHC 7.10  needs  Cabal >= 1.22
 --
--- (NB: we don't need to consider older GHCs as Cabal >= 1.20 is
+-- (NB: we don't need to consider older GHCs as Cabal >= 1.24 is
 -- the absolute lower bound)
+--
+-- This is the table of cabal-install 3.18 (and 3.14): it has no entries
+-- for GHC 9.12 and 9.14, which also get Cabal >= 3.12.
 --
 -- TODO: long-term, this compatibility matrix should be
 --       stored as a field inside 'Distribution.Compiler.Compiler'
 setupMinCabalVersion :: CompilerId -> Version
 setupMinCabalVersion (CompilerId flavor version) =
     if
+            | isGHC, version >= mkVersion [9, 10] -> mkVersion [3, 12]
             | isGHC, version >= mkVersion [9, 6] -> mkVersion [3, 10]
             | isGHC, version >= mkVersion [9, 4] -> mkVersion [3, 8]
             | isGHC, version >= mkVersion [9, 2] -> mkVersion [3, 6]
@@ -275,9 +280,7 @@ setupMinCabalVersion (CompilerId flavor version) =
             | isGHC, version >= mkVersion [8, 6] -> mkVersion [2, 4]
             | isGHC, version >= mkVersion [8, 4] -> mkVersion [2, 2]
             | isGHC, version >= mkVersion [8, 2] -> mkVersion [2, 0]
-            | isGHC, version >= mkVersion [8, 0] -> mkVersion [1, 24]
-            | isGHC, version >= mkVersion [7, 10] -> mkVersion [1, 22]
-            | otherwise -> mkVersion [1, 20]
+            | otherwise -> mkVersion [1, 24]
   where
     isGHC = flavor `elem` [GHC, GHCJS]
 

@@ -108,6 +108,8 @@ A unit is either a pre-existing library from a package db, or something built fr
 
 A target package gets all of its buildable libraries, foreign libraries and executables. Other packages only get the components something in the plan needs. Test suites and benchmarks are only included when the solver enabled them.
 
+This is a difference from cabal-install's `plan.json`, which is written before pruning to the targets: it also lists library components that nothing needs. One example is the internal library `vector:lib:benchmarks-O2`, which only vector's benchmarks use, together with its dependencies such as `tasty`.
+
 ### Unit ids
 
 The id of a configured unit is `<name>-<version>`, then a component suffix (none for `lib`; `-l-<name>`, `-f-<name>`, `-e-<name>`, `-t-<name>` or `-b-<name>` otherwise), then `-` and a sha256. The sha256 covers:

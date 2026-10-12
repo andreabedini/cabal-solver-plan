@@ -52,8 +52,10 @@ All sources are in `app/`. This tool reaches into cabal-install **internals** (`
   - It converts user constraints and flags into `LabeledPackageConstraint`s, including the setup-`Cabal` min/max version constraints copied from cabal-install (`setupMinCabalVersion`, `setupMaxCabalVersion`).
   - It interprets package preferences (`PreferLatestForSelected`, or `PreferAllOldest` with `--prefer-oldest`).
   - It builds the solver `Index` via `convPIs`, then merges in a synthetic index for `--with-preinstalled` packages (`mkExtraIndex`; only lib/exe components are supported).
-- **`SetupDeps.hs`**: code copied from cabal-install's `ProjectPlanning` for default `custom-setup` dependencies. Only `cabalPkgname` is used at present; `applyDefaultSetupDeps` is not wired in.
+- **`SetupDeps.hs`**: `applyDefaultSetupDeps` gives Custom and Hooks packages without a `custom-setup` stanza the setup dependencies cabal-install 3.18 assumes. `Main` applies it to every source package before solving. It copies `mkDefaultSetupDeps` and `addCabalDepForHooks`, but works from a `CompilerInfo`, so it also works with `--compiler-id`. Upstream's `setImplicitSetupInfo` and `packageSetupScriptStyle` are reused. `cabalPkgname` is `"Cabal"`; package names are case-sensitive.
 - **`SourcePackage/Lens.hs`**: hand-written `Lens'`s (via `Distribution.Compat.Lens`) for `SourcePackage` fields. `SetupDeps` uses them.
+
+The JSON plan has been checked against cabal-install plans for `network`, `shake` (cabal 3.14.2), `entropy` and `aeson-diff` (cabal 3.16.1, made offline with a private `CABAL_DIR`). The only expected difference is that cabal's `plan.json` is unpruned (see `docs/plan-format.md`).
 
 A lot of the code mirrors cabal-install source, including comments that refer to cabal-install functions such as `planPackages` and `addSetupCabalMinVersionConstraint`. When changing behaviour, compare against the matching upstream cabal-install function.
 

@@ -50,6 +50,7 @@ import IndexTar (Index (..), Repository (..), indexSourcePackages, readIndex)
 import Network.URI (URI (..), URIAuth (..))
 import Options
 import Plan (PlanInputs (..), makePlan, renderPlanJson)
+import SetupDeps (applyDefaultSetupDeps)
 import SolverInterface (solve)
 import System.Directory (createDirectoryIfMissing, doesFileExist, listDirectory)
 import System.Exit (exitFailure)
@@ -114,7 +115,11 @@ main = do
                     ++ ", index-state " ++ Cabal.prettyShow (indexTimestamp index)
             return index
 
-    sourcePkgIndex <- mconcat <$> traverse indexSourcePackages indexes
+    -- As cabal-install does, give Custom and Hooks packages without a
+    -- custom-setup stanza default setup dependencies.
+    sourcePkgIndex <-
+        fmap (applyDefaultSetupDeps cinfo platform) . mconcat
+            <$> traverse indexSourcePackages indexes
     let sourcePkgPrefs = Map.unionsWith (const id) (map indexPreferences indexes)
 
     let targetsPackageName =
