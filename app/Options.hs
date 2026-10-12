@@ -207,6 +207,8 @@ compilerSourceParser =
                             <> metavar "EXTENSION"
                         )
                 )
+            -- Wired-in unit ids are unknown; the solver then acts pessimistically.
+            <*> pure Nothing
 
     platformOption =
         parsecOption
@@ -346,9 +348,11 @@ solverConfigParser =
             )
         -- Skip goalOrder. It is a function
         <*> pure Nothing
-        <*> parsecOption
-            ( long "verbosity"
-                <> value Verbosity.normal
+        <*> ( Verbosity.vLevel
+                <$> parsecOption
+                    ( long "verbosity"
+                        <> value Verbosity.normal
+                    )
             )
         <*> ( PruneAfterFirstSuccess
                 <$> switch

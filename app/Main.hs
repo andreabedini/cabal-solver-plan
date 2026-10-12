@@ -36,7 +36,7 @@ import Distribution.Solver.Modular.Assignment (toCPs)
 import Distribution.Solver.Modular.Configured (CP (..))
 import Distribution.Solver.Modular.ConflictSet (showConflictSet)
 import Distribution.Solver.Modular.Log (SolverFailure (..))
-import Distribution.Solver.Modular.Message (showMessages)
+import Distribution.Solver.Modular.Message (renderSummarizedMessage, summarizeMessages)
 import Distribution.Solver.Modular.Package (showPI)
 import Distribution.Solver.Modular.RetryLog (toProgress)
 import Distribution.Solver.Types.ComponentDeps qualified as ComponentDeps
@@ -58,7 +58,7 @@ import Prelude hiding (pi)
 
 main :: IO ()
 main = do
-    let verbosity = Verbosity.normal
+    let verbosity = Verbosity.mkVerbosity Verbosity.defaultVerbosityHandles Verbosity.normal
     Options{..} <- parseOptions
 
     -- Here we interpret the user input w.r.t to the compiler, platform and
@@ -116,12 +116,12 @@ main = do
     result <-
         foldProgress
             -- step
-            (\step rest -> putStrLn step >> rest)
+            (\step rest -> putStrLn (renderSummarizedMessage step) >> rest)
             -- fail
             (return . Left)
             -- done
             (return . Right . uncurry toCPs)
-            (showMessages progress)
+            (summarizeMessages progress)
 
     case result of
         Left (ExhaustiveSearch cs cm) ->
@@ -163,7 +163,7 @@ determineCompiler verbosity = \case
         let platform = fromMaybe buildPlatform mPlatform
         installedPkgIndex <-
             if useGlobalPackageDb
-                then GHC.getInstalledPackages verbosity compiler Nothing [GlobalPackageDB] programdb
+                then GHC.getInstalledPackages verbosity Nothing [GlobalPackageDB] programdb
                 else mempty
         return (compilerInfo compiler, platform, installedPkgIndex)
 
