@@ -54,7 +54,7 @@ import Hackage.Security.Client qualified as Sec
 import IndexTar (Index (..), Repository (..), indexSourcePackages, readIndex)
 import Network.URI (URI (..), URIAuth (..))
 import Options
-import Plan (PackageSource (..), PlanInputs (..), makePlan, renderPlanJson)
+import Plan (PackageSource (..), PlanInputs (..), makePlan, renderPlanJson, unsupportedUnits)
 import SetupDeps (applyDefaultSetupDeps)
 import SolverInterface (solve)
 import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, listDirectory)
@@ -193,6 +193,14 @@ main = do
                             , planTargets = targetsPackageName
                             }
                         cps
+                case unsupportedUnits plan of
+                    [] -> return ()
+                    units -> do
+                        hPutStr stderr $
+                            unlines $
+                                "Cannot make a plan, Backpack is not supported:"
+                                    : ["  " ++ uid ++ ": " ++ reason | (uid, reason) <- units]
+                        exitFailure
                 LBS.putStr $
                     renderPlanJson
                         [(repositoryName (indexRepository i), indexTimestamp i) | i <- indexes]

@@ -13,6 +13,7 @@ module Plan (
     PlanInputs (..),
     Plan,
     makePlan,
+    unsupportedUnits,
     renderPlanJson,
 ) where
 
@@ -69,7 +70,7 @@ import Distribution.Solver.Types.SolverId (SolverId (..))
 import Distribution.Solver.Types.SolverPackage (SolverPackage (..))
 import Distribution.Solver.Types.SourcePackage (SourcePackage (..))
 import Distribution.System (Platform (..))
-import Distribution.Types.Component (Component, componentBuildInfo, componentName)
+import Distribution.Types.Component (Component (CLib), componentBuildInfo, componentName)
 import Distribution.Types.Dependency (Dependency (..))
 import Distribution.Types.DependencySatisfaction (DependencySatisfaction (Satisfied))
 import Distribution.Types.ExeDependency (ExeDependency (..))
@@ -133,6 +134,7 @@ data UnitKind
     = InstalledUnit
         { installedDb :: String
         , installedLibName :: LibraryName
+        , installedIndefinite :: Bool
         }
     | -- | A component of a package, or the whole package ('Nothing').
       SourceUnit Elaborated (Maybe ComponentName)
@@ -202,6 +204,28 @@ makePlan inputs@PlanInputs{..} cps = do
                 , any (`Set.member` reachable) (sourceKeys e)
                 ]
             }
+
+-- | The units of a plan that we cannot describe correctly, with the reason.
+--
+-- Backpack is not supported: an indefinite library (one with signatures)
+-- has to be instantiated, which gives extra units that 'makePlan' does not
+-- make. Rather than give a plan that fails to build, we refuse it.
+unsupportedUnits :: Plan -> [(String, String)]
+unsupportedUnits Plan{..} =
+    [ (unitId u, reason)
+    | u <- planUnits
+    , reason <- case unitKind u of
+        InstalledUnit{installedIndefinite = True} ->
+            ["it is an indefinite (Backpack) library"]
+        InstalledUnit{} -> []
+        SourceUnit e mcn ->
+            [ "its " ++ prettyShow (componentName c) ++ " has Backpack signatures: " ++ unwords (map prettyShow sigs)
+            | c@(CLib lib) <- elabComponents e
+            , maybe True (== componentName c) mcn
+            , let sigs = PD.signatures lib
+            , not (null sigs)
+            ]
+    ]
 
 -- | Our equivalent of cabal-install-solver's convCP.
 resolve :: PlanInputs -> CP QPN -> Resolved
@@ -299,6 +323,7 @@ makeUnits PlanInputs{..} elaborated infos = units
                     InstalledUnit
                         { installedDb = Map.findWithDefault "global" (IPI.installedUnitId ipi) planInstalledDb
                         , installedLibName = IPI.sourceLibName ipi
+                        , installedIndefinite = IPI.indefinite ipi
                         }
                 , unitDepends = map InstalledKey (IPI.depends ipi)
                 , unitExeDepends = []

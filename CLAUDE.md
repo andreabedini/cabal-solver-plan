@@ -49,6 +49,7 @@ All sources are in `app/`. This tool reaches into cabal-install **internals** (`
   - It chooses per-component vs whole-package with cabal-install **3.14**'s rule, deliberately not 3.18's (see `elaborate`).
   - Unit ids hash their dependencies' ids, using a lazily tied `Map`.
   - It prunes to the targets' closure, orders dependencies first, and renders JSON with `aeson-pretty` and a fixed key order.
+  - Backpack is not supported. `unsupportedUnits` makes `Main` refuse a plan with a library that has signatures, or an indefinite installed unit, because the instantiated units would be missing.
 - **`SolverInterface.hs`**: `solve` is a trimmed re-implementation of cabal-install's solver entry point, built by hand:
   - It converts user constraints and flags into `LabeledPackageConstraint`s, including the setup-`Cabal` min/max version constraints copied from cabal-install (`setupMinCabalVersion`, `setupMaxCabalVersion`).
   - It interprets package preferences (`PreferLatestForSelected`, or `PreferAllOldest` with `--prefer-oldest`).

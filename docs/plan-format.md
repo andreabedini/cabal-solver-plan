@@ -111,6 +111,10 @@ A target package gets all of its buildable libraries, foreign libraries and exec
 
 This is a difference from cabal-install's `plan.json`, which is written before pruning to the targets: it also lists library components that nothing needs. One example is the internal library `vector:lib:benchmarks-O2`, which only vector's benchmarks use, together with its dependencies such as `tasty`.
 
+### Backpack
+
+Backpack is not supported. An indefinite library (one with `signatures`) has to be instantiated, which gives extra units that this tool does not make. If a unit in the plan is such a library, or is an indefinite library from a package db, `cabal-solver-plan --json` prints nothing on stdout, names the units on stderr and exits with status 1. Libraries that only rename modules with `mixins` are fine.
+
 ### Unit ids
 
 The id of a configured unit is `<name>-<version>`, then a component suffix (none for `lib`; `-l-<name>`, `-f-<name>`, `-e-<name>`, `-t-<name>` or `-b-<name>` otherwise), then `-` and a sha256. The sha256 covers:
