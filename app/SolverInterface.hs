@@ -25,7 +25,7 @@ import Distribution.Simple as Cabal
 import Distribution.Simple.Flag qualified as Flag
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import Distribution.Simple.Utils (cabalVersion)
-import Distribution.Solver.Modular (SolverConfig)
+import Distribution.Solver.Modular (SolverConfig (..))
 import Distribution.Solver.Modular.Assignment (Assignment)
 import Distribution.Solver.Modular.Dependency (ExposedComponent (..), RevDepMap)
 import Distribution.Solver.Modular.Index (ComponentInfo (..), Index, IsBuildable (..), IsVisible (..), PInfo (..), mkIndex)
@@ -44,7 +44,7 @@ import Distribution.Solver.Types.PackageConstraint (ConstraintScope (..), scopeT
 import Distribution.Solver.Types.PackageIndex (PackageIndex)
 import Distribution.Solver.Types.PackagePreferences (PackagePreferences (..))
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb)
-import Distribution.Solver.Types.Settings (PreferOldest, ShadowPkgs (..), SolveExecutables (..), StrongFlags (..))
+import Distribution.Solver.Types.Settings (PreferOldest)
 import Distribution.Solver.Types.SourcePackage (SourcePackage)
 import Distribution.System (Arch, OS)
 import Distribution.Types.PackageVersionConstraint (PackageVersionConstraint (..))
@@ -126,9 +126,9 @@ solve
                     arch
                     cinfo
                     gcs
-                    (ShadowPkgs False)
-                    (StrongFlags False)
-                    (SolveExecutables True)
+                    (shadowPkgs solverConfig)
+                    (strongFlags solverConfig)
+                    (solveExecutables solverConfig)
                     installedPkgIndex
                     sourcePkgIndex
 
