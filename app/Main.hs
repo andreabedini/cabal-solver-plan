@@ -6,7 +6,7 @@ import Control.Monad (unless)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (for_)
-import Data.List (intercalate)
+import Data.List (dropWhileEnd, intercalate)
 import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as Map
 import Data.Containers.ListUtils (nubOrd)
@@ -33,13 +33,9 @@ import Distribution.Simple.GHC qualified as GHC
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import Distribution.Simple.PackageIndex qualified as Cabal.Index
 import Distribution.Simple.Program.Db (defaultProgramDb)
-import Distribution.Solver.Modular.Assignment (toCPs)
 import Distribution.Solver.Modular.Configured (CP (..))
-import Distribution.Solver.Modular.ConflictSet (showConflictSet)
-import Distribution.Solver.Modular.Log (SolverFailure (..))
-import Distribution.Solver.Modular.Message (renderSummarizedMessage, summarizeMessages)
+import Distribution.Solver.Modular.Message (renderSummarizedMessage)
 import Distribution.Solver.Modular.Package (I (..), Loc (..), PI (..), showPI)
-import Distribution.Solver.Modular.RetryLog (toProgress)
 import Distribution.Solver.Types.ComponentDeps qualified as ComponentDeps
 import Distribution.Solver.Types.OptionalStanza (showStanzas)
 import Distribution.Solver.Types.PackageIndex qualified as SourceIndex
@@ -149,22 +145,21 @@ main = do
         targetsPackageName = Set.fromList (map pkgSpecifierTarget specifiers)
 
         progress =
-            toProgress $
-                solve
-                    cinfo
-                    os
-                    arch
-                    (PkgConfigDb <$> pkgConfigDb)
-                    constraints
-                    preferences
-                    flagAssignments
-                    solverConfig
-                    preferOldest
-                    installedPkgIndex
-                    sourcePkgIndex
-                    sourcePkgPrefs
-                    extraPreInstalled
-                    specifiers
+            solve
+                cinfo
+                os
+                arch
+                (PkgConfigDb <$> pkgConfigDb)
+                constraints
+                preferences
+                flagAssignments
+                solverConfig
+                preferOldest
+                installedPkgIndex
+                sourcePkgIndex
+                sourcePkgPrefs
+                extraPreInstalled
+                specifiers
 
     result <-
         foldProgress
@@ -173,20 +168,12 @@ main = do
             -- fail
             (return . Left)
             -- done
-            (return . Right . uncurry toCPs)
-            (summarizeMessages progress)
+            (return . Right)
+            progress
 
     case result of
-        Left (ExhaustiveSearch cs cm) -> do
-            hPutStr stderr $
-                unlines
-                    [ "Exhaustive search failed"
-                    , "conflict set: " ++ showConflictSet cs
-                    , "conflict map: " ++ show cm
-                    ]
-            exitFailure
-        Left BackjumpLimitReached -> do
-            hPutStrLn stderr "backjump limit reached"
+        Left failure -> do
+            hPutStrLn stderr (dropWhileEnd (== '\n') failure)
             exitFailure
         Right cps
             | jsonOutput -> do

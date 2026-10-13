@@ -25,15 +25,17 @@ import Distribution.Simple as Cabal
 import Distribution.Simple.Flag qualified as Flag
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import Distribution.Simple.Utils (cabalVersion)
-import Distribution.Solver.Modular (SolverConfig (..))
-import Distribution.Solver.Modular.Assignment (Assignment)
-import Distribution.Solver.Modular.Dependency (ExposedComponent (..), RevDepMap)
+import Distribution.Solver.Modular (SolverConfig (..), modularResolver)
+import Distribution.Solver.Modular.Assignment (toCPs)
+import Distribution.Solver.Modular.Configured (CP)
+import Distribution.Solver.Modular.ConflictSet (showConflictSet)
+import Distribution.Solver.Modular.Dependency (ExposedComponent (..))
 import Distribution.Solver.Modular.Index (ComponentInfo (..), Index, IsBuildable (..), IsVisible (..), PInfo (..), mkIndex)
 import Distribution.Solver.Modular.IndexConversion (convPIs)
-import Distribution.Solver.Modular.Log (SolverFailure)
-import Distribution.Solver.Modular.Message (Message)
+import Distribution.Solver.Modular.Log (SolverFailure (..))
+import Distribution.Solver.Modular.Message (summarizeMessages)
 import Distribution.Solver.Modular.Package (I (..), Loc (..))
-import Distribution.Solver.Modular.RetryLog (RetryLog)
+import Distribution.Solver.Modular.RetryLog (toProgress)
 import Distribution.Solver.Modular.Solver qualified as Solver
 import Distribution.Solver.Types.ConstraintSource (ConstraintSource (..))
 import Distribution.Solver.Types.InstalledPreference (InstalledPreference)
@@ -42,11 +44,14 @@ import Distribution.Solver.Types.LabeledPackageConstraint (LabeledPackageConstra
 import Distribution.Solver.Types.OptionalStanza (OptionalStanza)
 import Distribution.Solver.Types.PackageConstraint (ConstraintScope (..), scopeToPackageName)
 import Distribution.Solver.Types.PackageIndex (PackageIndex)
+import Distribution.Solver.Types.PackagePath (QPN)
 import Distribution.Solver.Types.PackagePreferences (PackagePreferences (..))
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb)
+import Distribution.Solver.Types.Progress (Progress (..), foldProgress)
 import Distribution.Solver.Types.Settings (PreferOldest)
 import Distribution.Solver.Types.SourcePackage (SourcePackage)
-import Distribution.System (Arch, OS)
+import Distribution.Solver.Types.SummarizedMessage (SummarizedMessage)
+import Distribution.System (Arch, OS, Platform (..))
 import Distribution.Types.PackageVersionConstraint (PackageVersionConstraint (..))
 import SetupDeps (cabalPkgname)
 
@@ -65,7 +70,7 @@ solve ::
     Map PackageName VersionRange ->
     [(PackageId, PD.ComponentName)] ->
     [PackageSpecifier (SourcePackage loc)] ->
-    RetryLog Message SolverFailure (Assignment, RevDepMap)
+    Progress SummarizedMessage String [CP QPN]
 solve
     cinfo
     os
@@ -81,8 +86,22 @@ solve
     sourcePkgPrefs
     extraPreInstalled
     specifiers =
-        Solver.solve solverConfig cinfo idx pkgConfigDb packagePreferences gcs targets
+        foldProgress Step (Fail . explainFailure) (Done . uncurry toCPs) $
+            summarizeMessages $
+                toProgress $
+                    Solver.solve solverConfig cinfo idx pkgConfigDb packagePreferences gcs targets
       where
+        -- cabal-install explains a failure by running the solver again (see
+        -- solve' in Distribution.Solver.Modular), which only modularResolver
+        -- does. It takes the same inputs, except for the --with-preinstalled
+        -- packages, so without those we let it find the explanation.
+        explainFailure :: SolverFailure -> String
+        explainFailure failure
+            | null extraPreInstalled =
+                foldProgress (\_ rest -> rest) id (const (showFailure failure)) $
+                    modularResolver solverConfig (Platform arch os) cinfo installedPkgIndex sourcePkgIndex pkgConfigDb packagePreferences constraints targets
+            | otherwise = showFailure failure
+
         constraints :: [LabeledPackageConstraint]
         constraints =
             mkConstraints (compilerInfoId cinfo) solverSettingConstraints solverSettingFlagAssignments
@@ -133,6 +152,16 @@ solve
                     sourcePkgIndex
 
         extraLibsIndex = mkExtraIndex extraPreInstalled
+
+showFailure :: SolverFailure -> String
+showFailure = \case
+    ExhaustiveSearch cs cm ->
+        unlines
+            [ "Exhaustive search failed"
+            , "conflict set: " ++ showConflictSet cs
+            , "conflict map: " ++ show cm
+            ]
+    BackjumpLimitReached -> "backjump limit reached\n"
 
 mkConstraints ::
     -- | compiler
