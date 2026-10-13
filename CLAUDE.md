@@ -47,7 +47,7 @@ All sources are in `app/`. This tool reaches into cabal-install **internals** (`
   - Its own version of `convCP` maps solver results to packages.
   - `finalizePD` with the solver's flags and stanzas decides components.
   - It chooses per-component vs whole-package with cabal-install **3.14**'s rule, deliberately not 3.18's (see `elaborate`).
-  - Units have no meaningful ids: in the JSON a unit's `id` is its position in the dependencies-first order. Pre-existing units carry their package-db `unit-id`; configured units carry none, as choosing one is up to the consumer.
+  - Units have no meaningful ids: in the JSON a unit's `id` is its position in the dependencies-first order. Pre-existing units carry their package-db `unit-id`; configured units carry none, as choosing one is up to the consumer. Every unit lists the solver's qualified names (`showQPN`) for its package; units are not split by qualifier.
   - It prunes to the targets' closure, orders dependencies first, and renders JSON with `aeson-pretty` and a fixed key order.
   - Backpack is not supported. `unsupportedUnits` makes `Main` refuse a plan with a library that has signatures, or an indefinite installed unit, because the instantiated units would be missing.
 - **`SolverInterface.hs`**: `solve` is a trimmed re-implementation of cabal-install's solver entry point, built by hand:

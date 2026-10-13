@@ -62,6 +62,14 @@ A unit is either a pre-existing library from a package db, or something built fr
 
 The plan is a graph whose nodes are the units. A unit's `id` is its position in `units` (0, 1, 2, …), and it is only used to refer to the unit from `targets` and from other units' `depends`, `exe-depends` and `setup-depends`. It means nothing else: the same unit can get a different `id` in another plan, and it is not a unit id that GHC or cabal-install would use. Choosing unit ids for configured units is up to whoever builds the plan.
 
+Every unit has `qualified-names`, the solver's qualified names for the package it comes from, sorted. The solver chooses the dependencies of a package's `Setup.hs`, and of each build tool, separately from the rest of the plan, and qualifies their names to keep them apart:
+
+- `<name>` is a target, or a package the targets' libraries need, directly or not.
+- `<pkg>:setup.<name>` is a package that the `Setup.hs` of `<pkg>` needs, directly or not.
+- `<pkg>:<tool>:exe.<name>` is a package that the build tool `<tool>` of `<pkg>` needs, `<tool>` included.
+
+When the solver makes the same choice under several qualified names, the plan has only one unit for it, and the unit lists every name. In the example below, `base` serves both `network` and `hsc2hs`, the build tool `network` uses. Every unit of a source package gets all of the package's names.
+
 ### Pre-existing units
 
 ```json
@@ -70,6 +78,7 @@ The plan is a graph whose nodes are the units. A unit's `id` is its position in 
   "type": "pre-existing",
   "name": "base",
   "version": "4.21.0.0",
+  "qualified-names": ["base", "network:hsc2hs:exe.base"],
   "component": "lib",
   "db": "global",
   "unit-id": "base-4.21.0.0-b7a5",
@@ -90,6 +99,7 @@ The plan is a graph whose nodes are the units. A unit's `id` is its position in 
   "package": "hsc2hs-0.68.10",
   "name": "hsc2hs",
   "version": "0.68.10",
+  "qualified-names": ["network:hsc2hs:exe.hsc2hs"],
   "build-style": "per-component",
   "component": "exe:hsc2hs",
   "flags": { "in-ghc-tree": false },

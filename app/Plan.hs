@@ -61,7 +61,7 @@ import Distribution.Solver.Types.ComponentDeps qualified as ComponentDeps
 import Distribution.Solver.Types.OptionalStanza (enableStanzas)
 import Distribution.Solver.Types.PackageIndex (PackageIndex)
 import Distribution.Solver.Types.PackageIndex qualified as SourceIndex
-import Distribution.Solver.Types.PackagePath (PackagePath (..), QPN, Qualified (..), Qualifier (..))
+import Distribution.Solver.Types.PackagePath (PackagePath (..), QPN, Qualified (..), Qualifier (..), showQPN)
 import Distribution.Solver.Types.SolverId (SolverId (..))
 import Distribution.Solver.Types.SolverPackage (SolverPackage (..))
 import Distribution.Solver.Types.SourcePackage (SourcePackage (..))
@@ -146,6 +146,8 @@ data Plan = Plan
     , planUnits :: [Unit]
     -- ^ Dependencies first.
     , planTargetUnits :: [UnitKey]
+    , planQualifiedNames :: Map UnitKey [String]
+    -- ^ The qualified names the solver chose each unit's package under.
     , planPackages :: [(Elaborated, PackageInfo)]
     }
 
@@ -187,6 +189,27 @@ makePlan inputs@PlanInputs{..} cps = do
                     ]
 
         ordered = dependenciesFirst units roots
+
+        -- The solver can choose the same package under several qualifiers
+        -- (say @base@ and @network:hsc2hs:exe.base@); its units have them all.
+        qualifiedNames =
+            Map.map Set.toAscList $
+                Map.fromListWith
+                    Set.union
+                    [ (key, Set.singleton (showQPN qpn))
+                    | CP (PI qpn@(Q _ pn) (I v loc)) _ _ _ <- cps
+                    , let pkgid = PackageIdentifier pn v
+                    , key <- case loc of
+                        -- An installed package's sublibraries are separate
+                        -- units, found by package id as in 'unitOf'.
+                        Inst uid ->
+                            InstalledKey uid
+                                : [ InstalledKey (IPI.installedUnitId ipi)
+                                  | ipi <- InstalledIndex.lookupSourcePackageId planInstalled pkgid
+                                  , LSubLibName _ <- [IPI.sourceLibName ipi]
+                                  ]
+                        InRepo -> maybe [] sourceKeys (Map.lookup pkgid elaborated)
+                    ]
         reachable = Set.fromList ordered
 
     return
@@ -194,6 +217,7 @@ makePlan inputs@PlanInputs{..} cps = do
             { planInputs = inputs
             , planUnits = map (units Map.!) ordered
             , planTargetUnits = roots
+            , planQualifiedNames = qualifiedNames
             , planPackages =
                 [ (e, infos Map.! pkgid)
                 | (pkgid, e) <- Map.toList elaborated
@@ -476,6 +500,7 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
         , "version"
         , "build-type"
         , "build-style"
+        , "qualified-names"
         , "component"
         , "components"
         , "db"
@@ -496,6 +521,7 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
     -- A unit's id is its position in "units".
     ids = Map.fromList (zip (map unitKey planUnits) [0 :: Int ..])
     idsOf keys = mapMaybe (`Map.lookup` ids) keys
+    qualifiedNamesOf u = Map.findWithDefault [] (unitKey u) planQualifiedNames
 
     packageJson (e, PackageInfo{..}) =
         object
@@ -535,6 +561,7 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
             , "type" .= ("pre-existing" :: String)
             , "name" .= unPackageName (pkgName (unitPackageId u))
             , "version" .= prettyShow (pkgVersion (unitPackageId u))
+            , "qualified-names" .= qualifiedNamesOf u
             , "component" .= prettyShow (CLibName installedLibName)
             , "db" .= installedDb
             , "unit-id" .= unUnitId installedUnitId
@@ -546,6 +573,7 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
             , "package" .= prettyShow (elabPackageId e)
             , "name" .= unPackageName (pkgName (unitPackageId u))
             , "version" .= prettyShow (pkgVersion (unitPackageId u))
+            , "qualified-names" .= qualifiedNamesOf u
             , "flags" .= Map.fromList [(unFlagName f, b) | (f, b) <- unFlagAssignment (elabFlags e)]
             , "depends" .= idsOf (unitDepends u)
             , "exe-depends" .= idsOf (unitExeDepends u)
