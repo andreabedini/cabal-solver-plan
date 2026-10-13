@@ -74,4 +74,4 @@ cabal-solver-plan --compiler-id ghc-9.12.2 --platform x86_64-linux \
   --index ~/index-copy/01-index.tar --json text
 ```
 
-With `--compiler-id` there are no pre-installed packages, so the solver will want to build `base` and other boot packages from source, which usually fails. Use `--package-db` (a directory of `.conf` files) or `--with-preinstalled PKGID[:LIB]` to tell it what is installed.
+With `--compiler-id` there are no pre-installed packages, so the solver will want to build `base` and other boot packages from source, which usually fails. Use `--package-db` (a directory of `.conf` files) or `--with-preinstalled PKGID[:LIB]` to tell it what is installed. `--json` only accepts packages from `--package-db`.

@@ -139,3 +139,7 @@ This is a difference from cabal-install's `plan.json`, which is written before p
 ### Backpack
 
 Backpack is not supported. An indefinite library (one with `signatures`) has to be instantiated, which gives extra units that this tool does not make. If a unit in the plan is such a library, or is an indefinite library from a package db, `cabal-solver-plan --json` prints nothing on stdout, names the units on stderr and exits with status 1. Libraries that only rename modules with `mixins` are fine.
+
+### Packages from `--with-preinstalled`
+
+A package given with `--with-preinstalled` is not in any package db, so a plan cannot say where to find it. If the solver chooses one, `cabal-solver-plan --json` prints nothing on stdout, names the packages on stderr and exits with status 1. Use `--package-db` instead.

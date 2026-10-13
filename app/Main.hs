@@ -9,7 +9,8 @@ import Data.Foldable (for_)
 import Data.List (intercalate)
 import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Containers.ListUtils (nubOrd)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Set qualified as Set
 import Data.Traversable (for)
 import Distribution.Client.Dependency (PackageProperty (..))
@@ -37,7 +38,7 @@ import Distribution.Solver.Modular.Configured (CP (..))
 import Distribution.Solver.Modular.ConflictSet (showConflictSet)
 import Distribution.Solver.Modular.Log (SolverFailure (..))
 import Distribution.Solver.Modular.Message (renderSummarizedMessage, summarizeMessages)
-import Distribution.Solver.Modular.Package (showPI)
+import Distribution.Solver.Modular.Package (I (..), Loc (..), PI (..), showPI)
 import Distribution.Solver.Modular.RetryLog (toProgress)
 import Distribution.Solver.Types.ComponentDeps qualified as ComponentDeps
 import Distribution.Solver.Types.OptionalStanza (showStanzas)
@@ -189,6 +190,16 @@ main = do
             exitFailure
         Right cps
             | jsonOutput -> do
+                -- A --with-preinstalled package is not in any package db,
+                -- so the plan cannot say where to find it.
+                case nubOrd [showPI pi | CP pi@(PI _ (I _ (Inst uid))) _ _ _ <- cps, isNothing (Cabal.Index.lookupUnitId installedPkgIndex uid)] of
+                    [] -> return ()
+                    pis -> do
+                        hPutStr stderr $
+                            unlines $
+                                "Cannot make a plan, it uses packages from --with-preinstalled, which --json does not support:"
+                                    : map ("  " ++) pis
+                        exitFailure
                 plan <-
                     makePlan
                         PlanInputs

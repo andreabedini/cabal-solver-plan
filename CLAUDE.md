@@ -53,7 +53,7 @@ All sources are in `app/`. This tool reaches into cabal-install **internals** (`
 - **`SolverInterface.hs`**: `solve` is a trimmed re-implementation of cabal-install's solver entry point, built by hand:
   - It converts user constraints and flags into `LabeledPackageConstraint`s, including the setup-`Cabal` min/max version constraints copied from cabal-install (`setupMinCabalVersion`, `setupMaxCabalVersion`).
   - It interprets package preferences (`PreferLatestForSelected`, or `PreferAllOldest` with `--prefer-oldest`).
-  - It builds the solver `Index` via `convPIs`, then merges in a synthetic index for `--with-preinstalled` packages (`mkExtraIndex`; only lib/exe components are supported).
+  - It builds the solver `Index` via `convPIs`, then merges in a synthetic index for `--with-preinstalled` packages (`mkExtraIndex`; only lib/exe components are supported). `Main` refuses a `--json` plan that uses one, as no package db holds it.
 - **`SetupDeps.hs`**: `applyDefaultSetupDeps` gives Custom and Hooks packages without a `custom-setup` stanza the setup dependencies cabal-install 3.18 assumes. `Main` applies it to every source package before solving. It copies `mkDefaultSetupDeps` and `addCabalDepForHooks`, but works from a `CompilerInfo`, so it also works with `--compiler-id`. Upstream's `setImplicitSetupInfo` and `packageSetupScriptStyle` are reused. `cabalPkgname` is `"Cabal"`; package names are case-sensitive.
 - **`SourcePackage/Lens.hs`**: hand-written `Lens'`s (via `Distribution.Compat.Lens`) for `SourcePackage` fields. `SetupDeps` uses them.
 
