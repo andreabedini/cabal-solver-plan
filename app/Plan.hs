@@ -153,8 +153,25 @@ data Plan = Plan
 
 makePlan :: PlanInputs -> [CP QPN] -> IO Plan
 makePlan inputs@PlanInputs{..} cps = do
-    let resolved = nubOrdOn resolvedKey (map (resolve inputs) cps)
-        elaborated =
+    let resolvedAll = map (resolve inputs) cps
+        -- Merge the qualified names that chose the same package, as
+        -- cabal-install's modularResolver does. The solver's single instance
+        -- restriction makes all but one of them link to the other, and
+        -- linked choices have the same flags, stanzas and dependencies.
+        resolved = nubOrdOn resolvedKey resolvedAll
+
+        configuration sp = (solverPkgFlags sp, solverPkgStanzas sp, solverPkgLibDeps sp, solverPkgExeDeps sp)
+        configurations =
+            Map.fromListWith
+                Set.union
+                [ (srcpkgPackageId (solverPkgSource sp), Set.singleton (configuration sp))
+                | ResolvedSource sp <- resolvedAll
+                ]
+    case [pkgid | (pkgid, cs) <- Map.toList configurations, Set.size cs > 1] of
+        [] -> return ()
+        pkgids -> error ("the solver chose several configurations of " ++ unwords (map prettyShow pkgids))
+
+    let elaborated =
             Map.fromList
                 [ (elabPackageId e, e)
                 | ResolvedSource sp <- resolved

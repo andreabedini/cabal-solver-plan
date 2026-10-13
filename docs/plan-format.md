@@ -67,8 +67,13 @@ Every unit has `qualified-names`, the solver's qualified names for the package i
 - `<name>` is a target, or a package the targets' libraries need, directly or not.
 - `<pkg>:setup.<name>` is a package that the `Setup.hs` of `<pkg>` needs, directly or not.
 - `<pkg>:<tool>:exe.<name>` is a package that the build tool `<tool>` of `<pkg>` needs, `<tool>` included.
+- `<pkg>.base` is the `base` that `<pkg>` needs, when the installed `base` itself depends on `base` (the base-3 compatibility shim of GHC 7.x). It does not happen with newer GHCs.
 
-When the solver makes the same choice under several qualified names, the plan has only one unit for it, and the unit lists every name. In the example below, `base` serves both `network` and `hsc2hs`, the build tool `network` uses. Every unit of a source package gets all of the package's names.
+With `--independent-goals`, each name also starts with `<target>.`, for the target whose dependencies it is part of.
+
+Several qualified names can choose the same package version (or installed unit). The solver allows only one of them to make that choice by itself, and makes the others link to it, which means the same flags, stanzas and dependencies (its "single instance restriction"). So the plan has one unit for them, as cabal-install does, and the unit lists every name. In the example below, `base` serves both `network` and `hsc2hs`, the build tool `network` uses. Every unit of a source package gets all of the package's names.
+
+Each qualified name belongs to one package version, so the `qualified-names` of two units of the same package and component never overlap, and a qualified name with a component names exactly one unit (for a whole-package unit, the component is one of its `components`).
 
 ### Pre-existing units
 
