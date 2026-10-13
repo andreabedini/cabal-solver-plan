@@ -44,7 +44,7 @@ All sources are in `app/`. This tool reaches into cabal-install **internals** (`
   - It then calls `SolverInterface.solve` and drives the resulting `Progress` with `foldProgress` to print the trace, and then the failure or the plan. With `--json` it passes the result to `Plan`.
 - **`IndexTar.hs`**: reads a Hackage `01-index.tar` directly. It walks the tar headers, seeking over contents, and keeps the entries up to the index-state: every `.cabal` revision, `package.json` and `preferred-versions`. It reads contents lazily (one `.cabal` file per package the solver looks at), and provides cabal-file revision, sha256 and size, and sdist sha256 and size. Walking the about 1 GB index dominates run time (about 4 s).
 - **`Plan.hs`**: turns the solver result into units:
-  - Its own version of `convCP` maps solver results to packages.
+  - Upstream `convCP` maps solver results to packages. `makePlan` keeps the `CP QPN`s too, for the qualified names.
   - `finalizePD` with the solver's flags and stanzas decides components.
   - It chooses per-component vs whole-package with cabal-install **3.14**'s rule, deliberately not 3.18's (see `elaborate`).
   - Units have no meaningful ids: in the JSON, `units` is an object keyed by meaningless ids (numbered dependencies first, but the format promises no order), and `packages` is an object keyed by package id. Pre-existing units carry their package-db `unit-id`; configured units carry none, as choosing one is up to the consumer. Every unit lists the solver's qualified names (`showQPN`) for its package; units are not split by qualifier.

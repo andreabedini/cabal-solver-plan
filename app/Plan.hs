@@ -22,7 +22,6 @@ import Data.Aeson.Encode.Pretty qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
 import Data.Char (isDigit)
 import Data.Containers.ListUtils (nubOrd)
-import Data.Either (partitionEithers)
 import Data.List (find)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -57,13 +56,14 @@ import Distribution.Simple.BuildToolDepends (getAllToolDependencies)
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import Distribution.Simple.PackageIndex qualified as InstalledIndex
 import Distribution.Solver.Modular.Configured (CP (..))
+import Distribution.Solver.Modular.ConfiguredConversion (convCP)
 import Distribution.Solver.Modular.Package (I (..), Loc (..), PI (..))
-import Distribution.Solver.Types.ComponentDeps (ComponentDeps)
 import Distribution.Solver.Types.ComponentDeps qualified as ComponentDeps
 import Distribution.Solver.Types.OptionalStanza (enableStanzas)
 import Distribution.Solver.Types.PackageIndex (PackageIndex)
-import Distribution.Solver.Types.PackageIndex qualified as SourceIndex
-import Distribution.Solver.Types.PackagePath (PackagePath (..), QPN, Qualified (..), Qualifier (..), showQPN)
+import Distribution.Solver.Types.InstSolverPackage (InstSolverPackage (..))
+import Distribution.Solver.Types.PackagePath (QPN, Qualified (..), showQPN)
+import Distribution.Solver.Types.ResolverPackage (ResolverPackage (..))
 import Distribution.Solver.Types.SolverId (SolverId (..))
 import Distribution.Solver.Types.SolverPackage (SolverPackage (..))
 import Distribution.Solver.Types.SourcePackage (SourcePackage (..))
@@ -92,11 +92,6 @@ data PlanInputs = PlanInputs
     , planIndexes :: [Index]
     , planTargets :: Set PackageName
     }
-
--- | A package as the solver chose it.
-data Resolved
-    = ResolvedInstalled UnitId PackageId
-    | ResolvedSource (SolverPackage PackageSource)
 
 data BuildStyle = PerComponent | WholePackage
     deriving (Eq)
@@ -155,7 +150,9 @@ data Plan = Plan
 
 makePlan :: PlanInputs -> [CP QPN] -> IO Plan
 makePlan inputs@PlanInputs{..} cps = do
-    let resolvedAll = map (resolve inputs) cps
+    -- convCP expects every installed choice in planInstalled; Main refuses
+    -- plans with --with-preinstalled packages, the only ones that are not.
+    let resolvedAll = map (convCP planInstalled planSourceIndex) cps
         -- Merge the qualified names that chose the same package, as
         -- cabal-install's modularResolver does. The solver's single instance
         -- restriction makes all but one of them link to the other, and
@@ -167,7 +164,7 @@ makePlan inputs@PlanInputs{..} cps = do
             Map.fromListWith
                 Set.union
                 [ (srcpkgPackageId (solverPkgSource sp), Set.singleton (configuration sp))
-                | ResolvedSource sp <- resolvedAll
+                | Configured sp <- resolvedAll
                 ]
     case [pkgid | (pkgid, cs) <- Map.toList configurations, Set.size cs > 1] of
         [] -> return ()
@@ -176,7 +173,7 @@ makePlan inputs@PlanInputs{..} cps = do
     let elaborated =
             Map.fromList
                 [ (elabPackageId e, e)
-                | ResolvedSource sp <- resolved
+                | Configured sp <- resolved
                 , let e = elaborate inputs sp
                 ]
 
@@ -196,9 +193,11 @@ makePlan inputs@PlanInputs{..} cps = do
             nubOrd $
                 concat
                     [ case r of
-                        ResolvedInstalled uid pkgid
-                            | pkgName pkgid `Set.member` planTargets -> [InstalledKey uid]
-                        ResolvedSource sp
+                        PreExisting isp
+                            | let ipi = instSolverPkgIPI isp
+                            , pkgName (IPI.sourcePackageId ipi) `Set.member` planTargets ->
+                                [InstalledKey (IPI.installedUnitId ipi)]
+                        Configured sp
                             | let pkgid = srcpkgPackageId (solverPkgSource sp)
                             , pkgName pkgid `Set.member` planTargets
                             , Just e <- Map.lookup pkgid elaborated ->
@@ -266,41 +265,10 @@ unsupportedUnits Plan{..} =
             ]
     ]
 
--- | Our equivalent of cabal-install-solver's convCP.
-resolve :: PlanInputs -> CP QPN -> Resolved
-resolve PlanInputs{..} (CP (PI (Q _ pn) (I v loc)) flags stanzas deps) =
-    case loc of
-        Inst uid -> ResolvedInstalled uid pkgid
-        InRepo ->
-            ResolvedSource
-                SolverPackage
-                    { solverPkgSource =
-                        fromMaybe (error ("no source package " ++ prettyShow pkgid)) $
-                            SourceIndex.lookupPackageId planSourceIndex pkgid
-                    , solverPkgFlags = flags
-                    , solverPkgStanzas = stanzas
-                    , solverPkgLibDeps = fmap fst deps'
-                    , solverPkgExeDeps = fmap snd deps'
-                    }
-  where
-    pkgid = PackageIdentifier pn v
-    deps' :: ComponentDeps ([SolverId], [SolverId])
-    deps' = fmap (partitionEithers . map solverId) deps
-
-    -- Executable dependencies are the ones qualified with the package
-    -- itself (the dependencies of those are also qualified).
-    solverId (PI (Q (PackagePath _ q) pn') (I v' loc')) =
-        let sid = PackageIdentifier pn' v'
-         in case loc' of
-                Inst uid -> Left (PreExistingId sid uid)
-                InRepo
-                    | QualExe _ pn'' <- q, pn' == pn'' -> Right (PlannedId sid)
-                    | otherwise -> Left (PlannedId sid)
-
-resolvedKey :: Resolved -> Either UnitId PackageId
+resolvedKey :: ResolverPackage PackageSource -> Either UnitId PackageId
 resolvedKey = \case
-    ResolvedInstalled uid _ -> Left uid
-    ResolvedSource sp -> Right (srcpkgPackageId (solverPkgSource sp))
+    PreExisting isp -> Left (IPI.installedUnitId (instSolverPkgIPI isp))
+    Configured sp -> Right (srcpkgPackageId (solverPkgSource sp))
 
 elaborate :: PlanInputs -> SolverPackage PackageSource -> Elaborated
 elaborate PlanInputs{..} sp =
