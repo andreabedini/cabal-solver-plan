@@ -75,6 +75,13 @@ Several qualified names can choose the same package version (or installed unit).
 
 Each qualified name belongs to one package version, so the `qualified-names` of two units of the same package and component never overlap, and a qualified name with a component names exactly one unit (for a whole-package unit, the component is one of its `components`).
 
+This restricts what qualified names can differ in. They can choose different versions of a package, and then the plan has a unit for each version. They cannot choose the same version with different flags or stanzas, even though the units could be built separately; cabal-install's solver rejects that too. For example, with a `Custom` package `bar` that needs `splitmix` in its library and its `Setup.hs`:
+
+- `--constraint 'splitmix ==0.1.3.2' --constraint 'bar:setup.splitmix ==0.1.3.1'` gives two units, `splitmix-0.1.3.2` (`splitmix`) and `splitmix-0.1.3.1` (`bar:setup.splitmix`).
+- `--constraint 'splitmix -optimised-mixer' --constraint 'bar:setup.splitmix +optimised-mixer'` cannot use 0.1.3.2 for both. The solver gives the setup `splitmix-0.1.3.1 +optimised-mixer` instead, and with only one version available there would be no plan.
+
+The plan checks this: if the qualified names it merges ever had different flags, stanzas or dependencies, `cabal-solver-plan --json` stops with an error instead of keeping one of them.
+
 ### Pre-existing units
 
 ```json
