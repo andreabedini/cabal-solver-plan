@@ -20,6 +20,7 @@ import Control.Monad (forM)
 import Data.Aeson (Value, object, (.=))
 import Data.Aeson.Encode.Pretty qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
+import Data.Char (isDigit)
 import Data.Containers.ListUtils (nubOrd)
 import Data.Either (partitionEithers)
 import Data.List (find)
@@ -28,6 +29,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Text qualified as Text
 import Distribution.CabalSpecVersion (CabalSpecVersion (CabalSpecV1_8))
 import Distribution.Client.IndexUtils.Timestamp (Timestamp)
 import Distribution.Compat.NonEmptySet qualified as NonEmptySet
@@ -490,7 +492,7 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
             , "index-state" .= Map.fromList [(name, prettyShow ts) | (name, ts) <- indexStates]
             , "targets" .= idsOf planTargetUnits
             , "packages" .= Map.fromList [(prettyShow (elabPackageId e), packageJson p) | p@(e, _) <- planPackages]
-            , "units" .= map unitJson planUnits
+            , "units" .= Map.fromList [(ids Map.! unitKey u, unitJson u) | u <- planUnits]
             ]
   where
     Platform arch os = planPlatform
@@ -498,9 +500,14 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
     config =
         Aeson.defConfig
             { Aeson.confIndent = Aeson.Spaces 2
-            , Aeson.confCompare = Aeson.keyOrder keyOrder <> compare
+            , Aeson.confCompare = Aeson.keyOrder keyOrder <> numerically <> compare
             , Aeson.confTrailingNewline = True
             }
+    -- Unit ids sort as numbers: a longer string of digits is a larger number.
+    numerically a b
+        | isNumber a, isNumber b = compare (Text.length a) (Text.length b)
+        | otherwise = EQ
+    isNumber k = not (Text.null k) && Text.all isDigit k
     keyOrder =
         [ "format"
         , "compiler-id"
@@ -510,7 +517,6 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
         , "targets"
         , "packages"
         , "units"
-        , "id"
         , "type"
         , "package"
         , "name"
@@ -535,8 +541,9 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
         , "setup-depends"
         ]
 
-    -- A unit's id is its position in "units".
-    ids = Map.fromList (zip (map unitKey planUnits) [0 :: Int ..])
+    -- Unit ids are only keys. Numbering the units dependencies first, and
+    -- printing them in numerical order, keeps the output readable.
+    ids = Map.fromList (zip (map unitKey planUnits) (map show [0 :: Int ..]))
     idsOf keys = mapMaybe (`Map.lookup` ids) keys
     qualifiedNamesOf u = Map.findWithDefault [] (unitKey u) planQualifiedNames
 
@@ -573,8 +580,7 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
     unitJson :: Unit -> Value
     unitJson u = object $ case unitKind u of
         InstalledUnit{..} ->
-            [ "id" .= (ids Map.! unitKey u)
-            , "type" .= ("pre-existing" :: String)
+            [ "type" .= ("pre-existing" :: String)
             , "name" .= unPackageName (pkgName (unitPackageId u))
             , "version" .= prettyShow (pkgVersion (unitPackageId u))
             , "qualified-names" .= qualifiedNamesOf u
@@ -584,8 +590,7 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
             , "depends" .= idsOf (unitDepends u)
             ]
         SourceUnit e mcn ->
-            [ "id" .= (ids Map.! unitKey u)
-            , "type" .= ("configured" :: String)
+            [ "type" .= ("configured" :: String)
             , "package" .= prettyShow (elabPackageId e)
             , "qualified-names" .= qualifiedNamesOf u
             , "flags" .= Map.fromList [(unFlagName f, b) | (f, b) <- unFlagAssignment (elabFlags e)]

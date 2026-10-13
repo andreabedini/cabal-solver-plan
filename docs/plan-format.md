@@ -13,9 +13,9 @@ The output is pretty-printed with a fixed key order, so the same inputs give byt
   "os": "linux",
   "arch": "x86_64",
   "index-state": { "hackage.haskell.org": "2026-05-31T23:08:56Z" },
-  "targets": [38, 39],
+  "targets": ["38", "39"],
   "packages": { … },
-  "units": [ … ]
+  "units": { … }
 }
 ```
 
@@ -26,7 +26,7 @@ The output is pretty-printed with a fixed key order, so the same inputs give byt
 | `index-state` | For each package index, the timestamp of the newest entry used. Passing it back as `--index-state` reproduces the plan. |
 | `targets` | The ids of the units that make up the requested targets. |
 | `packages` | The source packages in the plan, one entry per package version, keyed by package id (`<name>-<version>`). |
-| `units` | The units to build or use, dependencies before the units that need them. |
+| `units` | The units to build or use, keyed by unit id. |
 
 ## Packages
 
@@ -60,7 +60,9 @@ The output is pretty-printed with a fixed key order, so the same inputs give byt
 
 A unit is either a pre-existing library from a package db, or something built from a source package.
 
-The plan is a graph whose nodes are the units. A unit's `id` is its position in `units` (0, 1, 2, …), and it is only used to refer to the unit from `targets` and from other units' `depends`, `exe-depends` and `setup-depends`. It means nothing else: the same unit can get a different `id` in another plan, and it is not a unit id that GHC or cabal-install would use. Choosing unit ids for configured units is up to whoever builds the plan.
+The plan is a graph whose nodes are the units. A unit's id is its key in `units`, and it is only used to refer to the unit from `targets` and from other units' `depends`, `exe-depends` and `setup-depends`. It means nothing else: the same unit can get a different id in another plan, and it is not a unit id that GHC or cabal-install would use. Choosing unit ids for configured units is up to whoever builds the plan.
+
+Neither the ids nor the order of `units` say anything about dependencies. The graph has no cycles, so to build dependencies first, follow the edges.
 
 Every unit has `qualified-names`, the solver's qualified names for the package it comes from, sorted. The solver chooses the dependencies of a package's `Setup.hs`, and of each build tool, separately from the rest of the plan, and qualifies their names to keep them apart:
 
@@ -85,8 +87,7 @@ The plan checks this: if the qualified names it merges ever had different flags,
 ### Pre-existing units
 
 ```json
-{
-  "id": 4,
+"4": {
   "type": "pre-existing",
   "name": "base",
   "version": "4.21.0.0",
@@ -94,7 +95,7 @@ The plan checks this: if the qualified names it merges ever had different flags,
   "component": "lib",
   "db": "global",
   "unit-id": "base-4.21.0.0-b7a5",
-  "depends": [3, 1]
+  "depends": ["3", "1"]
 }
 ```
 
@@ -106,15 +107,14 @@ The plan checks this: if the qualified names it merges ever had different flags,
 ### Configured units
 
 ```json
-{
-  "id": 23,
+"23": {
   "type": "configured",
   "package": "hsc2hs-0.68.10",
   "qualified-names": ["network:hsc2hs:exe.hsc2hs"],
   "build-style": "per-component",
   "component": "exe:hsc2hs",
   "flags": { "in-ghc-tree": false },
-  "depends": [4, 21, 20, 16, 22],
+  "depends": ["4", "21", "20", "16", "22"],
   "exe-depends": [],
   "setup-depends": []
 }
