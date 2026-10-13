@@ -17,6 +17,7 @@ import Distribution.Client.Dependency (
     scopeToplevel,
  )
 import Distribution.Client.Targets (UserConstraint, userToPackageConstraint)
+import Distribution.Client.Types.PackageSpecifier (PackageSpecifier, pkgSpecifierConstraints, pkgSpecifierTarget)
 import Distribution.Client.Utils (incVersion)
 import Distribution.PackageDescription qualified as PD
 import Distribution.Pretty (prettyShow)
@@ -63,8 +64,7 @@ solve ::
     PackageIndex (SourcePackage loc) ->
     Map PackageName VersionRange ->
     [(PackageId, PD.ComponentName)] ->
-    [PackageId] ->
-    Set PackageName ->
+    [PackageSpecifier (SourcePackage loc)] ->
     RetryLog Message SolverFailure (Assignment, RevDepMap)
 solve
     cinfo
@@ -80,20 +80,18 @@ solve
     sourcePkgIndex
     sourcePkgPrefs
     extraPreInstalled
-    localPackages
-    targets =
+    specifiers =
         Solver.solve solverConfig cinfo idx pkgConfigDb packagePreferences gcs targets
       where
         constraints :: [LabeledPackageConstraint]
         constraints =
             mkConstraints (compilerInfoId cinfo) solverSettingConstraints solverSettingFlagAssignments
-                -- As cabal-install's pkgSpecifierConstraints: a local
-                -- package is always the version in its directory.
-                ++ [ LabeledPackageConstraint
-                        (PackageConstraint (ScopeTarget (pkgName pkgid)) (PackagePropertyVersion (thisVersion (pkgVersion pkgid))))
-                        ConstraintSourceUserTarget
-                   | pkgid <- localPackages
-                   ]
+                -- A named target's version range, and a local package's
+                -- version (it is always the one in its directory).
+                ++ concatMap pkgSpecifierConstraints specifiers
+
+        targets :: Set PackageName
+        targets = Set.fromList (map pkgSpecifierTarget specifiers)
 
         packagePreferences :: PackageName -> PackagePreferences
         packagePreferences = interpretPackagesPreference targets preferenceDefault preferences

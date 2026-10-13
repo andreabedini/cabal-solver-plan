@@ -12,15 +12,18 @@ import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Traversable (for)
+import Distribution.Client.Dependency (PackageProperty (..))
 import Distribution.Client.GlobalFlags (RepoContext (..), withRepoContext')
 import Distribution.Client.IndexUtils (TotalIndexState)
 import Distribution.Client.IndexUtils.IndexState (RepoIndexState (..), lookupIndexState)
 import Distribution.Client.IndexUtils.Timestamp (Timestamp)
 import Distribution.Client.Types (
+    PackageSpecifier (..),
     RemoteRepo (..),
     Repo (..),
     RepoName (..),
     emptyRemoteRepo,
+    pkgSpecifierTarget,
  )
 import Distribution.InstalledPackageInfo (InstalledPackageInfo, installedUnitId, parseInstalledPackageInfo)
 import Distribution.Pretty qualified as Cabal
@@ -44,12 +47,12 @@ import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb (..))
 import Distribution.Solver.Types.PkgConfigDb qualified as Solver
 import Distribution.Solver.Types.Progress (foldProgress)
 import Distribution.System (Platform (..), buildPlatform)
-import Distribution.Types.PackageId (PackageIdentifier (..))
 import Distribution.Types.PackageVersionConstraint (PackageVersionConstraint (..))
 import Distribution.PackageDescription (GenericPackageDescription, package, packageDescription)
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescriptionMaybe)
 import Distribution.Verbosity (Verbosity)
 import Distribution.Verbosity qualified as Verbosity
+import Distribution.Version (isAnyVersion)
 import Hackage.Security.Client qualified as Sec
 import IndexTar (Index (..), Repository (..), indexSourcePackages, readIndex)
 import Network.URI (URI (..), URIAuth (..))
@@ -135,8 +138,14 @@ main = do
     let installedPkgIndex = foldl (flip Cabal.Index.deleteSourcePackageId) installedPkgIndex0 (map srcpkgPackageId locals)
     let sourcePkgPrefs = Map.unionsWith (const id) (map indexPreferences indexes)
 
-    let targetsPackageName =
-            Set.fromList ([pn | PackageVersionConstraint pn _ <- targets] ++ map (pkgName . srcpkgPackageId) locals)
+    -- As cabal-install's pkgSpecifierConstraints, a target's version range
+    -- constrains it, and a local package is pinned to its own version.
+    let specifiers =
+            [ NamedPackage pn [PackagePropertyVersion vr | not (isAnyVersion vr)]
+            | PackageVersionConstraint pn vr <- targets
+            ]
+                ++ map SpecificSourcePackage locals
+        targetsPackageName = Set.fromList (map pkgSpecifierTarget specifiers)
 
         progress =
             toProgress $
@@ -154,8 +163,7 @@ main = do
                     sourcePkgIndex
                     sourcePkgPrefs
                     extraPreInstalled
-                    (map srcpkgPackageId locals)
-                    targetsPackageName
+                    specifiers
 
     result <-
         foldProgress
