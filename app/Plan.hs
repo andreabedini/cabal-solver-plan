@@ -483,13 +483,13 @@ renderPlanJson :: [(String, Timestamp)] -> Plan -> LBS.ByteString
 renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
     Aeson.encodePretty' config $
         object
-            [ "format" .= (2 :: Int)
+            [ "format" .= (3 :: Int)
             , "compiler-id" .= prettyShow (compilerInfoId planCompiler)
             , "os" .= prettyShow os
             , "arch" .= prettyShow arch
             , "index-state" .= Map.fromList [(name, prettyShow ts) | (name, ts) <- indexStates]
             , "targets" .= idsOf planTargetUnits
-            , "packages" .= map packageJson planPackages
+            , "packages" .= Map.fromList [(prettyShow (elabPackageId e), packageJson p) | p@(e, _) <- planPackages]
             , "units" .= map unitJson planUnits
             ]
   where
@@ -542,8 +542,7 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
 
     packageJson (e, PackageInfo{..}) =
         object
-            [ "id" .= prettyShow (elabPackageId e)
-            , "name" .= unPackageName (pkgName (elabPackageId e))
+            [ "name" .= unPackageName (pkgName (elabPackageId e))
             , "version" .= prettyShow (pkgVersion (elabPackageId e))
             , "build-type" .= prettyShow (PD.buildType (elabDescription e))
             , "src" .= case packageSource of
@@ -588,8 +587,6 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
             [ "id" .= (ids Map.! unitKey u)
             , "type" .= ("configured" :: String)
             , "package" .= prettyShow (elabPackageId e)
-            , "name" .= unPackageName (pkgName (unitPackageId u))
-            , "version" .= prettyShow (pkgVersion (unitPackageId u))
             , "qualified-names" .= qualifiedNamesOf u
             , "flags" .= Map.fromList [(unFlagName f, b) | (f, b) <- unFlagAssignment (elabFlags e)]
             , "depends" .= idsOf (unitDepends u)

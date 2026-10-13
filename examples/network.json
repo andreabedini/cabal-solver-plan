@@ -1,5 +1,5 @@
 {
-  "format": 2,
+  "format": 3,
   "compiler-id": "ghc-9.12.2",
   "os": "linux",
   "arch": "x86_64",
@@ -9,9 +9,8 @@
   "targets": [
     24
   ],
-  "packages": [
-    {
-      "id": "hsc2hs-0.68.10",
+  "packages": {
+    "hsc2hs-0.68.10": {
       "name": "hsc2hs",
       "version": "0.68.10",
       "build-type": "Simple",
@@ -27,8 +26,7 @@
         "size": 3131
       }
     },
-    {
-      "id": "network-3.2.8.0",
+    "network-3.2.8.0": {
       "name": "network",
       "version": "3.2.8.0",
       "build-type": "Configure",
@@ -44,7 +42,7 @@
         "size": 5305
       }
     }
-  ],
+  },
   "units": [
     {
       "id": 0,
@@ -465,8 +463,6 @@
       "id": 23,
       "type": "configured",
       "package": "hsc2hs-0.68.10",
-      "name": "hsc2hs",
-      "version": "0.68.10",
       "build-style": "per-component",
       "qualified-names": [
         "network:hsc2hs:exe.hsc2hs"
@@ -489,8 +485,6 @@
       "id": 24,
       "type": "configured",
       "package": "network-3.2.8.0",
-      "name": "network",
-      "version": "3.2.8.0",
       "build-style": "whole-package",
       "qualified-names": [
         "network"

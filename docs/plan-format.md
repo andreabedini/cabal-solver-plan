@@ -8,31 +8,30 @@ The output is pretty-printed with a fixed key order, so the same inputs give byt
 
 ```json
 {
-  "format": 2,
+  "format": 3,
   "compiler-id": "ghc-9.12.2",
   "os": "linux",
   "arch": "x86_64",
   "index-state": { "hackage.haskell.org": "2026-05-31T23:08:56Z" },
   "targets": [38, 39],
-  "packages": [ … ],
+  "packages": { … },
   "units": [ … ]
 }
 ```
 
 | Key | Meaning |
 |---|---|
-| `format` | Version of this format. Currently `2`. |
+| `format` | Version of this format. Currently `3`. |
 | `compiler-id`, `os`, `arch` | The compiler and platform the plan is for. |
 | `index-state` | For each package index, the timestamp of the newest entry used. Passing it back as `--index-state` reproduces the plan. |
 | `targets` | The ids of the units that make up the requested targets. |
-| `packages` | The source packages in the plan, one entry per package version. |
+| `packages` | The source packages in the plan, one entry per package version, keyed by package id (`<name>-<version>`). |
 | `units` | The units to build or use, dependencies before the units that need them. |
 
 ## Packages
 
 ```json
-{
-  "id": "network-3.2.8.0",
+"network-3.2.8.0": {
   "name": "network",
   "version": "3.2.8.0",
   "build-type": "Configure",
@@ -50,11 +49,12 @@ The output is pretty-printed with a fixed key order, so the same inputs give byt
 }
 ```
 
+- The key is the package id, `<name>-<version>`. Configured units refer to their package by it.
 - `build-type` is the package's `build-type` (`Simple`, `Configure`, `Custom` or `Hooks`).
-- `src.repo` is the repository URI. It always ends in `/`, so the tarball is at `<repo>package/<id>.tar.gz`.
+- `src.repo` is the repository URI. It always ends in `/`, so the tarball is at `<repo>package/<name>-<version>.tar.gz`.
 - `src.sha256` and `src.size` describe that tarball. They come from the package's `package.json` in the index (hackage-security target metadata), and are `null` if the index has none.
 - A local package (`--local-package`) has `"src": {"type": "local", "path": "<dir>"}`, with the directory as given, and `"cabal-file": null`.
-- `cabal-file` is the revision of the `.cabal` file the plan was made with. It can be downloaded from `<repo>package/<id>/revision/<revision>.cabal`. Revision 0 is the file uploaded with the package, and each later index entry for the file is a new revision; only entries up to the index-state count.
+- `cabal-file` is the revision of the `.cabal` file the plan was made with. It can be downloaded from `<repo>package/<name>-<version>/revision/<revision>.cabal`. Revision 0 is the file uploaded with the package, and each later index entry for the file is a new revision; only entries up to the index-state count.
 
 ## Units
 
@@ -98,6 +98,7 @@ The plan checks this: if the qualified names it merges ever had different flags,
 }
 ```
 
+- `name` and `version` are those of the unit's package. A pre-existing unit has no entry in `packages`, so it gives them itself.
 - `unit-id` is the unit's id in its package db. It is fixed by the package db, so it has to be used as is.
 - `component` is `lib` for a main library, or `lib:<name>` for a sublibrary.
 - `db` is `global` for the compiler's global package db, or the path given with `--package-db`.
@@ -109,8 +110,6 @@ The plan checks this: if the qualified names it merges ever had different flags,
   "id": 23,
   "type": "configured",
   "package": "hsc2hs-0.68.10",
-  "name": "hsc2hs",
-  "version": "0.68.10",
   "qualified-names": ["network:hsc2hs:exe.hsc2hs"],
   "build-style": "per-component",
   "component": "exe:hsc2hs",
@@ -121,7 +120,7 @@ The plan checks this: if the qualified names it merges ever had different flags,
 }
 ```
 
-- `package` is the id of the unit's entry in `packages`.
+- `package` is the key of the unit's entry in `packages`, which has its name and version.
 - `flags` lists every flag of the package with its value, defaults included.
 - A configured unit has no unit id. The plan says what to build, not what to call it.
 - `depends` are the units of the libraries the unit builds against. A dependency on a sublibrary is the id of a unit whose `component` is `lib:<name>`.

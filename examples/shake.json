@@ -1,5 +1,5 @@
 {
-  "format": 2,
+  "format": 3,
   "compiler-id": "ghc-9.12.2",
   "os": "linux",
   "arch": "x86_64",
@@ -10,9 +10,8 @@
     38,
     39
   ],
-  "packages": [
-    {
-      "id": "clock-0.8.4",
+  "packages": {
+    "clock-0.8.4": {
       "name": "clock",
       "version": "0.8.4",
       "build-type": "Simple",
@@ -28,8 +27,7 @@
         "size": 4631
       }
     },
-    {
-      "id": "extra-1.8.1",
+    "extra-1.8.1": {
       "name": "extra",
       "version": "1.8.1",
       "build-type": "Simple",
@@ -45,8 +43,7 @@
         "size": 2738
       }
     },
-    {
-      "id": "filepattern-0.1.3",
+    "filepattern-0.1.3": {
       "name": "filepattern",
       "version": "0.1.3",
       "build-type": "Simple",
@@ -62,8 +59,7 @@
         "size": 2454
       }
     },
-    {
-      "id": "hashable-1.5.1.0",
+    "hashable-1.5.1.0": {
       "name": "hashable",
       "version": "1.5.1.0",
       "build-type": "Simple",
@@ -79,8 +75,7 @@
         "size": 5787
       }
     },
-    {
-      "id": "heaps-0.4.1",
+    "heaps-0.4.1": {
       "name": "heaps",
       "version": "0.4.1",
       "build-type": "Simple",
@@ -96,8 +91,7 @@
         "size": 1444
       }
     },
-    {
-      "id": "js-dgtable-0.5.2",
+    "js-dgtable-0.5.2": {
       "name": "js-dgtable",
       "version": "0.5.2",
       "build-type": "Simple",
@@ -113,8 +107,7 @@
         "size": 1703
       }
     },
-    {
-      "id": "js-flot-0.8.3",
+    "js-flot-0.8.3": {
       "name": "js-flot",
       "version": "0.8.3",
       "build-type": "Simple",
@@ -130,8 +123,7 @@
         "size": 1985
       }
     },
-    {
-      "id": "js-jquery-3.7.1",
+    "js-jquery-3.7.1": {
       "name": "js-jquery",
       "version": "3.7.1",
       "build-type": "Simple",
@@ -147,8 +139,7 @@
         "size": 1666
       }
     },
-    {
-      "id": "primitive-0.9.1.0",
+    "primitive-0.9.1.0": {
       "name": "primitive",
       "version": "0.9.1.0",
       "build-type": "Simple",
@@ -164,8 +155,7 @@
         "size": 3258
       }
     },
-    {
-      "id": "random-1.3.1",
+    "random-1.3.1": {
       "name": "random",
       "version": "1.3.1",
       "build-type": "Simple",
@@ -181,8 +171,7 @@
         "size": 6004
       }
     },
-    {
-      "id": "shake-0.19.9",
+    "shake-0.19.9": {
       "name": "shake",
       "version": "0.19.9",
       "build-type": "Simple",
@@ -198,8 +187,7 @@
         "size": 15580
       }
     },
-    {
-      "id": "splitmix-0.1.3.2",
+    "splitmix-0.1.3.2": {
       "name": "splitmix",
       "version": "0.1.3.2",
       "build-type": "Simple",
@@ -215,8 +203,7 @@
         "size": 3608
       }
     },
-    {
-      "id": "unordered-containers-0.2.21",
+    "unordered-containers-0.2.21": {
       "name": "unordered-containers",
       "version": "0.2.21",
       "build-type": "Simple",
@@ -232,8 +219,7 @@
         "size": 3987
       }
     },
-    {
-      "id": "utf8-string-1.0.2",
+    "utf8-string-1.0.2": {
       "name": "utf8-string",
       "version": "1.0.2",
       "build-type": "Simple",
@@ -249,7 +235,7 @@
         "size": 1538
       }
     }
-  ],
+  },
   "units": [
     {
       "id": 0,
@@ -667,8 +653,6 @@
       "id": 24,
       "type": "configured",
       "package": "clock-0.8.4",
-      "name": "clock",
-      "version": "0.8.4",
       "build-style": "per-component",
       "qualified-names": [
         "clock"
@@ -687,8 +671,6 @@
       "id": 25,
       "type": "configured",
       "package": "extra-1.8.1",
-      "name": "extra",
-      "version": "1.8.1",
       "build-style": "per-component",
       "qualified-names": [
         "extra"
@@ -711,8 +693,6 @@
       "id": 26,
       "type": "configured",
       "package": "filepattern-0.1.3",
-      "name": "filepattern",
-      "version": "0.1.3",
       "build-style": "per-component",
       "qualified-names": [
         "filepattern"
@@ -753,8 +733,6 @@
       "id": 28,
       "type": "configured",
       "package": "hashable-1.5.1.0",
-      "name": "hashable",
-      "version": "1.5.1.0",
       "build-style": "per-component",
       "qualified-names": [
         "hashable"
@@ -780,8 +758,6 @@
       "id": 29,
       "type": "configured",
       "package": "heaps-0.4.1",
-      "name": "heaps",
-      "version": "0.4.1",
       "build-style": "per-component",
       "qualified-names": [
         "heaps"
@@ -798,8 +774,6 @@
       "id": 30,
       "type": "configured",
       "package": "js-dgtable-0.5.2",
-      "name": "js-dgtable",
-      "version": "0.5.2",
       "build-style": "per-component",
       "qualified-names": [
         "js-dgtable"
@@ -816,8 +790,6 @@
       "id": 31,
       "type": "configured",
       "package": "js-flot-0.8.3",
-      "name": "js-flot",
-      "version": "0.8.3",
       "build-style": "per-component",
       "qualified-names": [
         "js-flot"
@@ -834,8 +806,6 @@
       "id": 32,
       "type": "configured",
       "package": "js-jquery-3.7.1",
-      "name": "js-jquery",
-      "version": "3.7.1",
       "build-style": "per-component",
       "qualified-names": [
         "js-jquery"
@@ -852,8 +822,6 @@
       "id": 33,
       "type": "configured",
       "package": "primitive-0.9.1.0",
-      "name": "primitive",
-      "version": "0.9.1.0",
       "build-style": "per-component",
       "qualified-names": [
         "primitive"
@@ -873,8 +841,6 @@
       "id": 34,
       "type": "configured",
       "package": "splitmix-0.1.3.2",
-      "name": "splitmix",
-      "version": "0.1.3.2",
       "build-style": "per-component",
       "qualified-names": [
         "splitmix"
@@ -894,8 +860,6 @@
       "id": 35,
       "type": "configured",
       "package": "random-1.3.1",
-      "name": "random",
-      "version": "1.3.1",
       "build-style": "per-component",
       "qualified-names": [
         "random"
@@ -917,8 +881,6 @@
       "id": 36,
       "type": "configured",
       "package": "unordered-containers-0.2.21",
-      "name": "unordered-containers",
-      "version": "0.2.21",
       "build-style": "per-component",
       "qualified-names": [
         "unordered-containers"
@@ -940,8 +902,6 @@
       "id": 37,
       "type": "configured",
       "package": "utf8-string-1.0.2",
-      "name": "utf8-string",
-      "version": "1.0.2",
       "build-style": "per-component",
       "qualified-names": [
         "utf8-string"
@@ -959,8 +919,6 @@
       "id": 38,
       "type": "configured",
       "package": "shake-0.19.9",
-      "name": "shake",
-      "version": "0.19.9",
       "build-style": "per-component",
       "qualified-names": [
         "shake"
@@ -1002,8 +960,6 @@
       "id": 39,
       "type": "configured",
       "package": "shake-0.19.9",
-      "name": "shake",
-      "version": "0.19.9",
       "build-style": "per-component",
       "qualified-names": [
         "shake"
