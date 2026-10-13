@@ -4,8 +4,7 @@
 
 -- | Turn a solver result into a build plan: decide how each package is
 -- built (per component or as a whole package, as cabal-install 3.14 does),
--- give every unit a deterministic id, keep only what the targets need, and
--- render it as JSON.
+-- keep only what the targets need, and render it as JSON.
 --
 -- See docs/plan-format.md for the output format.
 module Plan (
@@ -23,21 +22,18 @@ import Data.Aeson.Encode.Pretty qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
 import Data.Containers.ListUtils (nubOrd)
 import Data.Either (partitionEithers)
-import Data.List (find, sortOn)
+import Data.List (find)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Text qualified as Text
-import Data.Text.Encoding qualified as Text
 import Distribution.CabalSpecVersion (CabalSpecVersion (CabalSpecV1_8))
-import Distribution.Client.HashValue (hashValue, showHashValue)
 import Distribution.Client.IndexUtils.Timestamp (Timestamp)
 import Distribution.Compat.NonEmptySet qualified as NonEmptySet
 import Distribution.Compiler (CompilerInfo (..))
 import Distribution.InstalledPackageInfo qualified as IPI
-import Distribution.Package (PackageId, PackageIdentifier (..), PackageName, UnitId, mkUnitId, unPackageName, unUnitId)
+import Distribution.Package (PackageId, PackageIdentifier (..), PackageName, UnitId, unPackageName, unUnitId)
 import Distribution.PackageDescription (
     BuildType (..),
     ComponentName (..),
@@ -122,8 +118,7 @@ data UnitKey
     deriving (Eq, Ord)
 
 data Unit = Unit
-    { unitId :: String
-    , unitPackageId :: PackageId
+    { unitPackageId :: PackageId
     , unitKind :: UnitKind
     , unitDepends :: [UnitKey]
     , unitExeDepends :: [UnitKey]
@@ -132,7 +127,8 @@ data Unit = Unit
 
 data UnitKind
     = InstalledUnit
-        { installedDb :: String
+        { installedUnitId :: UnitId
+        , installedDb :: String
         , installedLibName :: LibraryName
         , installedIndefinite :: Bool
         }
@@ -149,7 +145,7 @@ data Plan = Plan
     { planInputs :: PlanInputs
     , planUnits :: [Unit]
     -- ^ Dependencies first.
-    , planTargetUnits :: [String]
+    , planTargetUnits :: [UnitKey]
     , planPackages :: [(Elaborated, PackageInfo)]
     }
 
@@ -173,7 +169,7 @@ makePlan inputs@PlanInputs{..} cps = do
         sdist <- maybe (pure Nothing) (`sdistInfo` pkgid) index
         return (pkgid, PackageInfo source cabalFile sdist)
 
-    let units = makeUnits inputs elaborated infos
+    let units = makeUnits inputs elaborated
 
         roots =
             nubOrd $
@@ -197,7 +193,7 @@ makePlan inputs@PlanInputs{..} cps = do
         Plan
             { planInputs = inputs
             , planUnits = map (units Map.!) ordered
-            , planTargetUnits = map (unitId . (units Map.!)) roots
+            , planTargetUnits = roots
             , planPackages =
                 [ (e, infos Map.! pkgid)
                 | (pkgid, e) <- Map.toList elaborated
@@ -212,7 +208,7 @@ makePlan inputs@PlanInputs{..} cps = do
 -- make. Rather than give a plan that fails to build, we refuse it.
 unsupportedUnits :: Plan -> [(String, String)]
 unsupportedUnits Plan{..} =
-    [ (unitId u, reason)
+    [ (showKey (unitKey u), reason)
     | u <- planUnits
     , reason <- case unitKind u of
         InstalledUnit{installedIndefinite = True} ->
@@ -301,27 +297,30 @@ sourceKeys e = case elabBuildStyle e of
     WholePackage -> [SourceKey (elabPackageId e) Nothing]
     PerComponent -> [SourceKey (elabPackageId e) (Just (componentName c)) | c <- elabComponents e]
 
--- | All units the plan could need, keyed by 'UnitKey'. The map is built
--- lazily since each unit id is a hash of the ids of its dependencies.
-makeUnits :: PlanInputs -> Map PackageId Elaborated -> Map PackageId PackageInfo -> Map UnitKey Unit
-makeUnits PlanInputs{..} elaborated infos = units
+unitKey :: Unit -> UnitKey
+unitKey u = case unitKind u of
+    InstalledUnit{installedUnitId} -> InstalledKey installedUnitId
+    SourceUnit e mcn -> SourceKey (elabPackageId e) mcn
+
+-- | A unit's name for messages: the unit id of a pre-existing unit, or
+-- @<package id>[:<component>]@.
+showKey :: UnitKey -> String
+showKey = \case
+    InstalledKey uid -> unUnitId uid
+    SourceKey pkgid cn -> prettyShow pkgid ++ maybe "" ((":" ++) . prettyShow) cn
+
+-- | All units the plan could need, keyed by 'UnitKey'.
+makeUnits :: PlanInputs -> Map PackageId Elaborated -> Map UnitKey Unit
+makeUnits PlanInputs{..} elaborated = Map.fromList (installedUnits ++ sourceUnits)
   where
-    units = Map.fromList (installedUnits ++ sourceUnits)
-
-    idOf key = maybe (error ("unknown unit " ++ showKey key)) unitId (Map.lookup key units)
-
-    showKey = \case
-        InstalledKey uid -> unUnitId uid
-        SourceKey pkgid cn -> prettyShow pkgid ++ maybe "" ((":" ++) . prettyShow) cn
-
     installedUnits =
         [ ( InstalledKey (IPI.installedUnitId ipi)
           , Unit
-                { unitId = unUnitId (IPI.installedUnitId ipi)
-                , unitPackageId = IPI.sourcePackageId ipi
+                { unitPackageId = IPI.sourcePackageId ipi
                 , unitKind =
                     InstalledUnit
-                        { installedDb = Map.findWithDefault "global" (IPI.installedUnitId ipi) planInstalledDb
+                        { installedUnitId = IPI.installedUnitId ipi
+                        , installedDb = Map.findWithDefault "global" (IPI.installedUnitId ipi) planInstalledDb
                         , installedLibName = IPI.sourceLibName ipi
                         , installedIndefinite = IPI.indefinite ipi
                         }
@@ -340,16 +339,7 @@ makeUnits PlanInputs{..} elaborated infos = units
         ]
 
     sourceUnit e (SourceKey _ mcn) =
-        let unit =
-                Unit
-                    { unitId = makeUnitId e mcn unit
-                    , unitPackageId = elabPackageId e
-                    , unitKind = SourceUnit e mcn
-                    , unitDepends = depends
-                    , unitExeDepends = exeDepends
-                    , unitSetupDepends = setupDepends
-                    }
-            comps = case mcn of
+        let comps = case mcn of
                 Nothing -> elabComponents e
                 Just cn -> filter ((== cn) . componentName) (elabComponents e)
             -- In a whole-package build the dependencies between the
@@ -370,7 +360,13 @@ makeUnits PlanInputs{..} elaborated infos = units
                         , k <- unitOf sid (CLibName LMainLibName)
                         ]
                 PerComponent -> []
-         in unit
+         in Unit
+                { unitPackageId = elabPackageId e
+                , unitKind = SourceUnit e mcn
+                , unitDepends = depends
+                , unitExeDepends = exeDepends
+                , unitSetupDepends = setupDepends
+                }
     sourceUnit _ key = error ("not a source unit: " ++ showKey key)
 
     -- The units a component's build-depends refer to.
@@ -421,48 +417,16 @@ makeUnits PlanInputs{..} elaborated infos = units
             Just e -> [ownUnit e cn]
             Nothing -> error ("not in the plan: " ++ prettyShow pkgid)
 
-    makeUnitId :: Elaborated -> Maybe ComponentName -> Unit -> String
-    makeUnitId e mcn unit = case packageSource info of
-        -- The sources of a local package can change at any time, so as
-        -- cabal-install does we give it a fixed "inplace" id.
-        LocalPackage _ -> prettyShow (elabPackageId e) ++ "-inplace" ++ componentSuffix mcn
-        FromRepository _ ->
-            prettyShow (elabPackageId e) ++ componentSuffix mcn ++ "-" ++ showHashValue (hashValue (LBS.fromStrict (Text.encodeUtf8 (Text.pack hashInput))))
-      where
-        info = infos Map.! elabPackageId e
-        hashInput =
-            unlines
-                [ "package: " ++ prettyShow (elabPackageId e)
-                , "component: " ++ maybe "" prettyShow mcn
-                , "flags: " ++ prettyShow (elabFlags e)
-                , "compiler: " ++ prettyShow (compilerInfoId planCompiler)
-                , "platform: " ++ prettyShow planPlatform
-                , "cabal-file: " ++ maybe "" cabalFileSha256 (packageCabalFile info)
-                , "sdist: " ++ maybe "" sdistSha256 (packageSdist info)
-                , "depends: " ++ unwords (map idOf (unitDepends unit))
-                , "exe-depends: " ++ unwords (map idOf (unitExeDepends unit))
-                , "setup-depends: " ++ unwords (map idOf (unitSetupDepends unit))
-                ]
-
-    componentSuffix = \case
-        Nothing -> ""
-        Just (CLibName LMainLibName) -> ""
-        Just (CLibName (LSubLibName n)) -> "-l-" ++ prettyShow n
-        Just (CFLibName n) -> "-f-" ++ prettyShow n
-        Just (CExeName n) -> "-e-" ++ prettyShow n
-        Just (CTestName n) -> "-t-" ++ prettyShow n
-        Just (CBenchName n) -> "-b-" ++ prettyShow n
-
 -- | The units reachable from the roots, each after its dependencies.
 dependenciesFirst :: Map UnitKey Unit -> [UnitKey] -> [UnitKey]
-dependenciesFirst units roots = reverse (snd (foldl visit (Set.empty, []) (sortOn keyId roots)))
+dependenciesFirst units roots = reverse (snd (foldl visit (Set.empty, []) (sortNub roots)))
   where
-    keyId k = maybe "" unitId (Map.lookup k units)
+    sortNub = Set.toAscList . Set.fromList
     visit (seen, acc) k
         | k `Set.member` seen = (seen, acc)
         | otherwise =
             let unit = fromMaybe (error "dependenciesFirst: unknown unit") (Map.lookup k units)
-                deps = sortOn keyId (nubOrd (unitDepends unit ++ unitExeDepends unit ++ unitSetupDepends unit))
+                deps = sortNub (unitDepends unit ++ unitExeDepends unit ++ unitSetupDepends unit)
                 (seen', acc') = foldl visit (Set.insert k seen, acc) deps
              in (seen', k : acc')
 
@@ -478,12 +442,12 @@ renderPlanJson :: [(String, Timestamp)] -> Plan -> LBS.ByteString
 renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
     Aeson.encodePretty' config $
         object
-            [ "format" .= (1 :: Int)
+            [ "format" .= (2 :: Int)
             , "compiler-id" .= prettyShow (compilerInfoId planCompiler)
             , "os" .= prettyShow os
             , "arch" .= prettyShow arch
             , "index-state" .= Map.fromList [(name, prettyShow ts) | (name, ts) <- indexStates]
-            , "targets" .= planTargetUnits
+            , "targets" .= idsOf planTargetUnits
             , "packages" .= map packageJson planPackages
             , "units" .= map unitJson planUnits
             ]
@@ -515,6 +479,7 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
         , "component"
         , "components"
         , "db"
+        , "unit-id"
         , "flags"
         , "src"
         , "cabal-file"
@@ -528,10 +493,8 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
         , "setup-depends"
         ]
 
-    ids = Map.fromList [(unitKey u, unitId u) | u <- planUnits]
-    unitKey u = case unitKind u of
-        InstalledUnit{} -> InstalledKey (mkUnitId (unitId u))
-        SourceUnit e mcn -> SourceKey (elabPackageId e) mcn
+    -- A unit's id is its position in "units".
+    ids = Map.fromList (zip (map unitKey planUnits) [0 :: Int ..])
     idsOf keys = mapMaybe (`Map.lookup` ids) keys
 
     packageJson (e, PackageInfo{..}) =
@@ -568,16 +531,17 @@ renderPlanJson indexStates Plan{planInputs = PlanInputs{..}, ..} =
     unitJson :: Unit -> Value
     unitJson u = object $ case unitKind u of
         InstalledUnit{..} ->
-            [ "id" .= unitId u
+            [ "id" .= (ids Map.! unitKey u)
             , "type" .= ("pre-existing" :: String)
             , "name" .= unPackageName (pkgName (unitPackageId u))
             , "version" .= prettyShow (pkgVersion (unitPackageId u))
             , "component" .= prettyShow (CLibName installedLibName)
             , "db" .= installedDb
+            , "unit-id" .= unUnitId installedUnitId
             , "depends" .= idsOf (unitDepends u)
             ]
         SourceUnit e mcn ->
-            [ "id" .= unitId u
+            [ "id" .= (ids Map.! unitKey u)
             , "type" .= ("configured" :: String)
             , "package" .= prettyShow (elabPackageId e)
             , "name" .= unPackageName (pkgName (unitPackageId u))

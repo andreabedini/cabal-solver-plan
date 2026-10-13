@@ -8,12 +8,12 @@ The output is pretty-printed with a fixed key order, so the same inputs give byt
 
 ```json
 {
-  "format": 1,
+  "format": 2,
   "compiler-id": "ghc-9.12.2",
   "os": "linux",
   "arch": "x86_64",
   "index-state": { "hackage.haskell.org": "2026-05-31T23:08:56Z" },
-  "targets": ["shake-0.19.9-…", "shake-0.19.9-e-shake-…"],
+  "targets": [38, 39],
   "packages": [ … ],
   "units": [ … ]
 }
@@ -21,7 +21,7 @@ The output is pretty-printed with a fixed key order, so the same inputs give byt
 
 | Key | Meaning |
 |---|---|
-| `format` | Version of this format. Currently `1`. |
+| `format` | Version of this format. Currently `2`. |
 | `compiler-id`, `os`, `arch` | The compiler and platform the plan is for. |
 | `index-state` | For each package index, the timestamp of the newest entry used. Passing it back as `--index-state` reproduces the plan. |
 | `targets` | The ids of the units that make up the requested targets. |
@@ -60,21 +60,24 @@ The output is pretty-printed with a fixed key order, so the same inputs give byt
 
 A unit is either a pre-existing library from a package db, or something built from a source package.
 
+The plan is a graph whose nodes are the units. A unit's `id` is its position in `units` (0, 1, 2, …), and it is only used to refer to the unit from `targets` and from other units' `depends`, `exe-depends` and `setup-depends`. It means nothing else: the same unit can get a different `id` in another plan, and it is not a unit id that GHC or cabal-install would use. Choosing unit ids for configured units is up to whoever builds the plan.
+
 ### Pre-existing units
 
 ```json
 {
-  "id": "base-4.21.0.0-b7a5",
+  "id": 4,
   "type": "pre-existing",
   "name": "base",
   "version": "4.21.0.0",
   "component": "lib",
   "db": "global",
-  "depends": ["ghc-internal-9.1202.0-7700", "ghc-prim-0.13.0-00de"]
+  "unit-id": "base-4.21.0.0-b7a5",
+  "depends": [3, 1]
 }
 ```
 
-- `id` is the installed unit id from the package db.
+- `unit-id` is the unit's id in its package db. It is fixed by the package db, so it has to be used as is.
 - `component` is `lib` for a main library, or `lib:<name>` for a sublibrary.
 - `db` is `global` for the compiler's global package db, or the path given with `--package-db`.
 
@@ -82,7 +85,7 @@ A unit is either a pre-existing library from a package db, or something built fr
 
 ```json
 {
-  "id": "hsc2hs-0.68.10-e-hsc2hs-71059c12…",
+  "id": 23,
   "type": "configured",
   "package": "hsc2hs-0.68.10",
   "name": "hsc2hs",
@@ -90,7 +93,7 @@ A unit is either a pre-existing library from a package db, or something built fr
   "build-style": "per-component",
   "component": "exe:hsc2hs",
   "flags": { "in-ghc-tree": false },
-  "depends": ["base-4.21.0.0-b7a5", "…"],
+  "depends": [4, 21, 20, 16, 22],
   "exe-depends": [],
   "setup-depends": []
 }
@@ -98,6 +101,7 @@ A unit is either a pre-existing library from a package db, or something built fr
 
 - `package` is the id of the unit's entry in `packages`.
 - `flags` lists every flag of the package with its value, defaults included.
+- A configured unit has no unit id. The plan says what to build, not what to call it.
 - `depends` are the units of the libraries the unit builds against. A dependency on a sublibrary is the id of a unit whose `component` is `lib:<name>`.
 - `exe-depends` are the units of the executables it needs at build time (`build-tool-depends`, and known `build-tools`).
 - `setup-depends` are the libraries the package's `Setup.hs` needs. Only whole-package units have any.
@@ -114,15 +118,3 @@ This is a difference from cabal-install's `plan.json`, which is written before p
 ### Backpack
 
 Backpack is not supported. An indefinite library (one with `signatures`) has to be instantiated, which gives extra units that this tool does not make. If a unit in the plan is such a library, or is an indefinite library from a package db, `cabal-solver-plan --json` prints nothing on stdout, names the units on stderr and exits with status 1. Libraries that only rename modules with `mixins` are fine.
-
-### Unit ids
-
-The id of a configured unit is `<name>-<version>`, then a component suffix (none for `lib`; `-l-<name>`, `-f-<name>`, `-e-<name>`, `-t-<name>` or `-b-<name>` otherwise), then `-` and a sha256. The sha256 covers:
-- the package id, component and flags;
-- the compiler and platform;
-- the sha256s of the `.cabal` file and tarball;
-- the ids of all dependencies.
-
-The ids look like cabal-install's, but the hashes differ from cabal-install's.
-
-The sources of a local package can change at any time, so its units get fixed ids, as in cabal-install: `<name>-<version>-inplace` plus the component suffix, for example `demo-0.1.0.0-inplace-e-demo`. Local packages are always targets.

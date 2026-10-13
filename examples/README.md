@@ -8,4 +8,4 @@ cabal-solver-plan --with-ghc <ghc-9.12.2> --use-global-packagedb \
   --json network > network.json
 ```
 
-Apart from unit ids, they match cabal-install 3.14.2's plans for the same targets, which are in `../timbuktu/examples/plan/{network,shake}/BUCK`.
+They match cabal-install 3.14.2's plans for the same targets, which are in `../timbuktu/examples/plan/{network,shake}/BUCK`.

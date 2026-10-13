@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`cabal-solver-plan` is a single Haskell executable that runs cabal-install's modular dependency solver directly, with every solver input given on the command line instead of coming from a `cabal.project`. These inputs are the compiler, platform, installed package DBs, source repositories, pkg-config DB, constraints, flags and solver settings. It prints the solver's trace to stderr, then either the install plan on stdout or the conflict set. The plan is text by default, or JSON with `--json`: units with deterministic ids, hashes and sizes, in the format specified in `docs/plan-format.md`. See `README.md` for example invocations.
+`cabal-solver-plan` is a single Haskell executable that runs cabal-install's modular dependency solver directly, with every solver input given on the command line instead of coming from a `cabal.project`. These inputs are the compiler, platform, installed package DBs, source repositories, pkg-config DB, constraints, flags and solver settings. It prints the solver's trace to stderr, then either the install plan on stdout or the conflict set. The plan is text by default, or JSON with `--json`: a graph of units, with the hashes and sizes needed to fetch every package, in the format specified in `docs/plan-format.md`. See `README.md` for example invocations.
 
 The JSON plan is consumed by timbuktu (`../timbuktu`, buck2 rules for cabal packages, `rules/haskell/cabal_install/`). Keep `docs/plan-format.md` in sync with `Plan.hs`; a format change needs a matching change there.
 
@@ -18,7 +18,7 @@ fourmolu -i app                                                    # format (con
 
 There is no test suite. To check that a change works, run the README examples. Use `--use-global-packagedb` to load GHC's global package DB.
 
-The acceptance check for the JSON plan is to compare it with cabal-install 3.14.2's plans for `network` and `shake`. These are embedded in `../timbuktu/examples/plan/{network,shake}/BUCK` and were made with GHC 9.12.2 and `--index-state 2026-06-01T00:00:00Z`. Compare by package, version, component, flags and dependency edges; unit ids differ by design. Run against a copy of the Hackage index (`--index <copy>/01-index.tar`), never the one in `~/.cache/cabal`.
+The acceptance check for the JSON plan is to compare it with cabal-install 3.14.2's plans for `network` and `shake`. These are embedded in `../timbuktu/examples/plan/{network,shake}/BUCK` and were made with GHC 9.12.2 and `--index-state 2026-06-01T00:00:00Z`. Compare by package, version, component, flags and dependency edges; configured units have no unit id by design. Run against a copy of the Hackage index (`--index <copy>/01-index.tar`), never the one in `~/.cache/cabal`.
 
 CI (`.github/workflows/ci.yml`) runs `cabal build all` and `cabal test all` with GHC 9.12.2 and 9.14.1, and cabal 3.18.1.0.
 
@@ -47,7 +47,7 @@ All sources are in `app/`. This tool reaches into cabal-install **internals** (`
   - Its own version of `convCP` maps solver results to packages.
   - `finalizePD` with the solver's flags and stanzas decides components.
   - It chooses per-component vs whole-package with cabal-install **3.14**'s rule, deliberately not 3.18's (see `elaborate`).
-  - Unit ids hash their dependencies' ids, using a lazily tied `Map`.
+  - Units have no meaningful ids: in the JSON a unit's `id` is its position in the dependencies-first order. Pre-existing units carry their package-db `unit-id`; configured units carry none, as choosing one is up to the consumer.
   - It prunes to the targets' closure, orders dependencies first, and renders JSON with `aeson-pretty` and a fixed key order.
   - Backpack is not supported. `unsupportedUnits` makes `Main` refuse a plan with a library that has signatures, or an indefinite installed unit, because the instantiated units would be missing.
 - **`SolverInterface.hs`**: `solve` is a trimmed re-implementation of cabal-install's solver entry point, built by hand:
