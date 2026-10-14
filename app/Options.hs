@@ -11,6 +11,7 @@ where
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
+import Data.Version (showVersion)
 import Distribution.Client.IndexUtils.IndexState
 import Distribution.Client.Setup (defaultMaxBackjumps)
 import Distribution.Client.Targets
@@ -49,6 +50,7 @@ import Distribution.Types.PackageVersionConstraint
 import Distribution.Verbosity qualified as Verbosity
 import Network.URI (URI (..), parseAbsoluteURI)
 import Options.Applicative
+import Paths_cabal_solver_plan (version)
 
 -- | These are the options of the command line tool. They roughlty
 -- correspond to the inputs required by the solver but there are some
@@ -95,7 +97,7 @@ parseOptions :: IO Options
 parseOptions = execParser opts
 
 opts :: ParserInfo Options
-opts = info (s <**> helper) mods
+opts = info (s <**> helper <**> simpleVersioner ("cabal-solver-plan " ++ showVersion version)) mods
   where
     s :: Parser Options
     s =

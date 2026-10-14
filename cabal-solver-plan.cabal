@@ -19,6 +19,8 @@ executable cabal-solver-plan
                     , Options
                     , SolverInterface
                     , SourcePackage.Lens
+                    , Paths_cabal_solver_plan
+    autogen-modules:  Paths_cabal_solver_plan
     build-depends:    base ^>= 4.21.0.0 || ^>= 4.22.0.0
                     , aeson ^>= 2.3.2.0
                     , aeson-pretty ^>= 0.8.10
