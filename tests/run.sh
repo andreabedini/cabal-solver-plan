@@ -69,6 +69,14 @@ check_exit no-arguments 2 "$bin"
 check_exit unknown-option 2 "$bin" --no-such-option mtl
 check_exit conflicting-options 2 "$bin" --compiler-id ghc-9.12.2 -w "$ghc" mtl
 
+# No plan exits with 1, and other errors with 3, without an exception.
+check_exit no-plan 1 "$bin" -w "$ghc" no-such-package
+check_exit missing-package-db 3 "$bin" -w "$ghc" --package-db tests/no-such-db mtl
+if grep -q -i exception "$tmp/missing-package-db.err"; then
+    fail "missing-package-db prints no exception"
+    cat "$tmp/missing-package-db.err"
+fi
+
 check with-compiler "$bin" -w "$ghc" mtl || true
 
 # The old names of -w and of the default --use-global-packagedb still work.

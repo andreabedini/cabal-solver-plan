@@ -39,6 +39,8 @@ data Message
       NoPlan String [String]
     | -- | A plan was found, but cannot be printed: why, and the units.
       PlanRefused String [String]
+    | -- | An error that stops the program.
+      Fatal String
 
 severity :: Message -> Severity
 severity = \case
@@ -51,6 +53,7 @@ severity = \case
     Deprecated{} -> Warning
     NoPlan{} -> Error
     PlanRefused{} -> Error
+    Fatal{} -> Error
 
 render :: Message -> String
 render = \case
@@ -63,8 +66,9 @@ render = \case
         "Index " ++ name ++ ": " ++ show n ++ " package versions, index-state " ++ indexState
     FileWarning path warning -> path ++ ": " ++ warning
     Deprecated advice -> "Warning: " ++ advice
-    NoPlan explanation hints -> unlines' (explanation : hints)
+    NoPlan explanation hints -> unlines' (explanation : map ("Hint: " ++) hints)
     PlanRefused why units -> unlines' (why : map ("  " ++) units)
+    Fatal err -> "cabal-solver-plan: " ++ err
   where
     unlines' = foldr1 (\a b -> a ++ "\n" ++ b)
 
