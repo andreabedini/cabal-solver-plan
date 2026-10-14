@@ -28,5 +28,3 @@
 
 * read package indexes on Windows ([af082ce](https://github.com/andreabedini/cabal-solver-plan/commit/af082cea041eada18f416398dcc84b5c994767cd))
 * reject --use-global-packagedb with --compiler-id or --no-global-package-db ([95d050c](https://github.com/andreabedini/cabal-solver-plan/commit/95d050cbd67e9b31663133e92752f6176c0b01be))
-
-## Changelog
