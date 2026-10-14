@@ -86,10 +86,10 @@ solve
     sourcePkgPrefs
     extraPreInstalled
     specifiers =
-        foldProgress Step (Fail . explainFailure) (Done . uncurry toCPs) $
-            summarizeMessages $
-                toProgress $
-                    Solver.solve solverConfig cinfo idx pkgConfigDb packagePreferences gcs targets
+        foldProgress Step (Fail . explainFailure) (Done . uncurry toCPs)
+            $ summarizeMessages
+            $ toProgress
+            $ Solver.solve solverConfig cinfo idx pkgConfigDb packagePreferences gcs targets
       where
         -- cabal-install explains a failure by running the solver again (see
         -- solve' in Distribution.Solver.Modular), which only modularResolver
@@ -183,13 +183,13 @@ mkConstraints compilerId ssConstraints ssFlagAssignments =
                 ConstraintSetupCabalMaxVersion
             ]
         , [ LabeledPackageConstraint
-            (userToPackageConstraint pc)
-            ConstraintSourceCommandlineFlag
+                (userToPackageConstraint pc)
+                ConstraintSourceCommandlineFlag
           | pc <- ssConstraints
           ]
         , [ LabeledPackageConstraint
-            (PackageConstraint (scopeToplevel pn) (PackagePropertyFlags flags))
-            ConstraintSourceCommandlineFlag
+                (PackageConstraint (scopeToplevel pn) (PackagePropertyFlags flags))
+                ConstraintSourceCommandlineFlag
           | (pn, flags) <- Map.toList ssFlagAssignments
           ]
         ]
@@ -307,17 +307,17 @@ interpretPackagesPreference selected defaultPref prefs =
 setupMinCabalVersion :: CompilerId -> Version
 setupMinCabalVersion (CompilerId flavor version) =
     if
-            | isGHC, version >= mkVersion [9, 10] -> mkVersion [3, 12]
-            | isGHC, version >= mkVersion [9, 6] -> mkVersion [3, 10]
-            | isGHC, version >= mkVersion [9, 4] -> mkVersion [3, 8]
-            | isGHC, version >= mkVersion [9, 2] -> mkVersion [3, 6]
-            | isGHC, version >= mkVersion [9, 0] -> mkVersion [3, 4]
-            | isGHC, version >= mkVersion [8, 10] -> mkVersion [3, 2]
-            | isGHC, version >= mkVersion [8, 8] -> mkVersion [3, 0]
-            | isGHC, version >= mkVersion [8, 6] -> mkVersion [2, 4]
-            | isGHC, version >= mkVersion [8, 4] -> mkVersion [2, 2]
-            | isGHC, version >= mkVersion [8, 2] -> mkVersion [2, 0]
-            | otherwise -> mkVersion [1, 24]
+        | isGHC, version >= mkVersion [9, 10] -> mkVersion [3, 12]
+        | isGHC, version >= mkVersion [9, 6] -> mkVersion [3, 10]
+        | isGHC, version >= mkVersion [9, 4] -> mkVersion [3, 8]
+        | isGHC, version >= mkVersion [9, 2] -> mkVersion [3, 6]
+        | isGHC, version >= mkVersion [9, 0] -> mkVersion [3, 4]
+        | isGHC, version >= mkVersion [8, 10] -> mkVersion [3, 2]
+        | isGHC, version >= mkVersion [8, 8] -> mkVersion [3, 0]
+        | isGHC, version >= mkVersion [8, 6] -> mkVersion [2, 4]
+        | isGHC, version >= mkVersion [8, 4] -> mkVersion [2, 2]
+        | isGHC, version >= mkVersion [8, 2] -> mkVersion [2, 0]
+        | otherwise -> mkVersion [1, 24]
   where
     isGHC = flavor `elem` [GHC, GHCJS]
 

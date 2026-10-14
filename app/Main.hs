@@ -7,11 +7,11 @@ import Control.Exception (SomeAsyncException, SomeException, catch, displayExcep
 import Control.Monad (unless)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
+import Data.Containers.ListUtils (nubOrd)
 import Data.Foldable (for_)
 import Data.List (dropWhileEnd, intercalate)
 import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as Map
-import Data.Containers.ListUtils (nubOrd)
 import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing)
 import Data.Set qualified as Set
 import Data.Traversable (for)
@@ -29,12 +29,14 @@ import Distribution.Client.Types (
     pkgSpecifierTarget,
  )
 import Distribution.InstalledPackageInfo (InstalledPackageInfo, installedUnitId, parseInstalledPackageInfo)
+import Distribution.PackageDescription (GenericPackageDescription, package, packageDescription)
+import Distribution.PackageDescription.Parsec (parseGenericPackageDescriptionMaybe)
 import Distribution.Pretty qualified as Cabal
 import Distribution.Simple (CompilerInfo, PackageDBX (..), compilerInfo)
+import Distribution.Simple.Errors (exceptionMessage)
 import Distribution.Simple.GHC qualified as GHC
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import Distribution.Simple.PackageIndex qualified as Cabal.Index
-import Distribution.Simple.Errors (exceptionMessage)
 import Distribution.Simple.Program.Db (defaultProgramDb)
 import Distribution.Simple.Utils (VerboseException (..))
 import Distribution.Solver.Modular.Configured (CP (..))
@@ -43,14 +45,12 @@ import Distribution.Solver.Modular.Package (I (..), Loc (..), PI (..), showPI)
 import Distribution.Solver.Types.ComponentDeps qualified as ComponentDeps
 import Distribution.Solver.Types.OptionalStanza (showStanzas)
 import Distribution.Solver.Types.PackageIndex qualified as SourceIndex
-import Distribution.Solver.Types.SourcePackage (SourcePackage (..))
 import Distribution.Solver.Types.PkgConfigDb (PkgConfigDb (..))
 import Distribution.Solver.Types.PkgConfigDb qualified as Solver
 import Distribution.Solver.Types.Progress (foldProgress)
+import Distribution.Solver.Types.SourcePackage (SourcePackage (..))
 import Distribution.System (Platform (..), buildPlatform)
 import Distribution.Types.PackageVersionConstraint (PackageVersionConstraint (..))
-import Distribution.PackageDescription (GenericPackageDescription, package, packageDescription)
-import Distribution.PackageDescription.Parsec (parseGenericPackageDescriptionMaybe)
 import Distribution.Verbosity (Verbosity)
 import Distribution.Version (isAnyVersion)
 import Hackage.Security.Client qualified as Sec
@@ -176,9 +176,9 @@ run logger Options{..} = do
     sourcePkgIndex <- do
         fromIndexes <- mconcat <$> traverse indexSourcePackages indexes
         let fromRepositories = fmap (\sp -> sp{srcpkgSource = FromRepository (srcpkgSource sp)}) fromIndexes
-        return $
-            fmap (applyDefaultSetupDeps cinfo platform) $
-                foldl (flip SourceIndex.insert) fromRepositories locals
+        return
+            $ fmap (applyDefaultSetupDeps cinfo platform)
+            $ foldl (flip SourceIndex.insert) fromRepositories locals
     let installedPkgIndex = foldl (flip Cabal.Index.deleteSourcePackageId) installedPkgIndex0 (map srcpkgPackageId locals)
     let sourcePkgPrefs = Map.unionsWith (const id) (map indexPreferences indexes)
 
@@ -225,9 +225,9 @@ run logger Options{..} = do
                     | null indexes
                     ]
                         ++ [ "No packages are installed, so even base would have to be built from source: "
-                            ++ case compilerSource of
-                                CompilerInline{} -> "give the compiler's package db with --package-db."
-                                CompilerFromSystem{} -> "leave out --no-global-package-db, or give --package-db."
+                                ++ case compilerSource of
+                                    CompilerInline{} -> "give the compiler's package db with --package-db."
+                                    CompilerFromSystem{} -> "leave out --no-global-package-db, or give --package-db."
                            | null (Cabal.Index.allPackages installedPkgIndex) && null extraPreInstalled
                            ]
             logger <& NoPlan (dropWhile (== '\n') (dropWhileEnd (== '\n') failure)) hints
@@ -270,20 +270,20 @@ run logger Options{..} = do
                         plan
             | otherwise ->
                 for_ cps $ \(CP pi flagAssignment optionalStanzaSet componentDeps) ->
-                    putStrLn $
-                        unlines $
-                            unwords
-                                [ showPI pi
-                                , Cabal.prettyShow flagAssignment
-                                , showStanzas optionalStanzaSet
-                                ]
-                                : map
-                                    ( \g ->
-                                        Cabal.prettyShow (fst (NE.head g))
-                                            ++ "\t"
-                                            ++ intercalate ", " (foldMap (map showPI . snd) g)
-                                    )
-                                    (NE.groupWith fst $ ComponentDeps.toList componentDeps)
+                    putStrLn
+                        $ unlines
+                        $ unwords
+                            [ showPI pi
+                            , Cabal.prettyShow flagAssignment
+                            , showStanzas optionalStanzaSet
+                            ]
+                            : map
+                                ( \g ->
+                                    Cabal.prettyShow (fst (NE.head g))
+                                        ++ "\t"
+                                        ++ intercalate ", " (foldMap (map showPI . snd) g)
+                                )
+                                (NE.groupWith fst $ ComponentDeps.toList componentDeps)
 
 -- | Check that the inputs exist, before the slow work starts.
 checkInputs :: CompilerSource -> [FilePath] -> Maybe FilePath -> [FilePath] -> IO ()
@@ -388,13 +388,13 @@ loadRepositories logger verbosity repositories cacheDir offline = do
     for remoteRepos $ \RemoteRepo{..} -> do
         let path = cacheDir </> unRepoName remoteRepoName </> "01-index.tar"
         exists <- doesFileExist path
-        unless exists $
-            fail $
-                "no package index for repository "
-                    ++ unRepoName remoteRepoName
-                    ++ " at "
-                    ++ path
-                    ++ if offline then " (run without --offline to download it)" else ""
+        unless exists
+            $ fail
+            $ "no package index for repository "
+                ++ unRepoName remoteRepoName
+                ++ " at "
+                ++ path
+                ++ if offline then " (run without --offline to download it)" else ""
         return
             Repository
                 { repositoryName = unRepoName remoteRepoName
