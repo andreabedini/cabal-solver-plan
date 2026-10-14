@@ -3,11 +3,21 @@ name:            cabal-solver-plan
 -- x-release-please-start-version
 version:         0.0.0
 -- x-release-please-end
-license:         NONE
-author:          andrea@andreabedini.com
-maintainer:      Andrea Bedini
+synopsis:        Run cabal-install's solver with every input given on the command line
+category:        Distribution
+homepage:        https://github.com/andreabedini/cabal-solver-plan
+bug-reports:     https://github.com/andreabedini/cabal-solver-plan/issues
+license:         MIT
+license-file:    LICENSE
+author:          Andrea Bedini
+maintainer:      andrea@bedini.au
 build-type:      Simple
 extra-doc-files: CHANGELOG.md
+                 README.md
+
+source-repository head
+    type:     git
+    location: https://github.com/andreabedini/cabal-solver-plan.git
 
 common warnings
     ghc-options: -Wall

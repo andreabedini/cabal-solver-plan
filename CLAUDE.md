@@ -8,6 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The JSON plan is consumed by timbuktu (`../timbuktu`, buck2 rules for cabal packages, `rules/haskell/cabal_install/`). Keep `docs/plan-format.md` in sync with `Plan.hs`; a format change needs a matching change there.
 
+The project is MIT-licensed (`LICENSE`). `README.md` is for users: what the tool is for and what it can't do ("Why"), installing a release binary, and examples. `CONTRIBUTING.md` is for contributors: building, `tests/run.sh`, fourmolu, and the commit convention. When behaviour, options, supported platforms or the release process change, update both; when the commit rules below change, update `CONTRIBUTING.md` too.
+
 ## Commands
 
 ```sh
@@ -16,7 +18,7 @@ cabal run -w ghc-9.14.1 -- cabal-solver-plan --with-ghc ghc-9.14.1 mtl   # run (
 fourmolu -i app                                                    # format (config: fourmolu.yaml)
 ```
 
-`tests/run.sh BINARY` tests a built executable: `--version`, `--help`, a `--with-ghc` solve, and golden JSON plans for `network` and `shake` (`tests/golden/`). The golden solves use `--compiler-id ghc-9.12.2 --platform x86_64-linux` with the package db vendored in `tests/package-db/`, so they give the same plans on every OS. They download Hackage's index into `$CACHE_DIR` (default `_cache`) and read it up to `--index-state 2026-06-01T00:00:00Z`. `UPDATE_GOLDEN=1` rewrites the golden files. For anything else, run the README examples. Use `--use-global-packagedb` to load GHC's global package DB.
+`tests/run.sh BINARY` tests a built executable: `--version`, `--help`, a `--with-ghc` solve, and golden JSON plans for `network` and `shake` (`tests/golden/`). The golden solves use `--compiler-id ghc-9.12.2 --platform x86_64-linux` with the package db vendored in `tests/package-db/`, so they give the same plans on every OS. They download Hackage's index into `$CACHE_DIR` (default `_cache`) and read it up to `--index-state 2026-06-01T00:00:00Z`. `UPDATE_GOLDEN=1` rewrites the golden files. The package db is the `*.conf` files of a ghcup GHC 9.12.2's global package db; its unit ids differ from those in `examples/`, which came from another GHC 9.12.2 install. For anything else, run the README examples. Use `--use-global-packagedb` to load GHC's global package DB.
 
 ```sh
 cabal build -w ghc-9.14.1 && tests/run.sh "$(cabal list-bin -w ghc-9.14.1 cabal-solver-plan)"
@@ -33,7 +35,7 @@ CI (`.github/workflows/ci.yml`) has three stages. Released binaries must be exac
 
 ### Commits and releases
 
-Commit messages follow Conventional Commits (`feat:`, `fix:`, `feat!:`, `docs:`, `ci:`, …). release-please uses them to pick the next version and write `CHANGELOG.md`. Versions are SemVer (`0.1.0`), not PVP. The `version:` field in the `.cabal` file sits between `x-release-please-start-version` / `x-release-please-end` comments, and release-please updates it in its release PR; don't edit it, `CHANGELOG.md` or `.release-please-manifest.json` by hand. Before 1.0, `feat:` bumps the minor version.
+Commit messages follow Conventional Commits (`feat:`, `fix:`, `feat!:`, `docs:`, `ci:`, …). release-please uses them to pick the next version and write `CHANGELOG.md`. Versions are SemVer (`0.1.0`), not PVP. The `version:` field in the `.cabal` file sits between `x-release-please-start-version` / `x-release-please-end` comments, and release-please updates it in its release PR; don't edit it, `CHANGELOG.md` or `.release-please-manifest.json` by hand. Before 1.0, `feat:` and breaking changes (`!`) both bump the minor version.
 
 The repo is a jj (Jujutsu) colocated repo, so use `jj`, not `git`, for VCS operations.
 
@@ -48,6 +50,7 @@ All sources are in `app/`. This tool reaches into cabal-install **internals** (`
 - **`Options.hs`**: the optparse-applicative CLI, which maps to the `Options` record. Two design points:
   - `CompilerSource` is either `CompilerFromSystem` (a real `ghc` at a path, optionally loading its global package DB) or `CompilerInline` (a synthetic `CompilerInfo` + `Platform` from `--compiler-id`, `--platform`, etc.). These are alternatives because a global package DB only makes sense when a real GHC exists.
   - Many options parse with Cabal's own `Parsec` instances through the `parsecOption` / `parsecOptionWith` / `parsecArgument` helpers. Reuse them for new options.
+  - `--version` prints `cabal-solver-plan VERSION`, with the version from `Paths_cabal_solver_plan`. `tests/run.sh` checks it against the `.cabal` file.
 - **`Main.hs`**: wires everything together:
   - `determineCompiler` returns compiler info, platform and the global installed package index.
   - `readPackageDb` reads `*.conf` files straight from a directory, so `--package-db` does not need `ghc-pkg`.

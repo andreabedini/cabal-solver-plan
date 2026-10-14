@@ -11,6 +11,23 @@ The inputs are:
 
 The solver trace goes to stderr. The plan goes to stdout, as text, or as JSON with `--json` (see [docs/plan-format.md](docs/plan-format.md)).
 
+## Why
+
+`cabal build --dry-run` also finds a build plan, but its inputs are spread out: `cabal.project`, `~/.config/cabal/config`, the package index in `~/.cache/cabal`, whichever `ghc` is on the `PATH`, and the network. `cabal-solver-plan` takes every input from the command line, so a plan depends only on what you give it. That makes it useful for:
+
+- **Reproducible plans.** Read the index from a file with `--index` and pin it with `--index-state`. The same command then gives the same plan on any machine, without network access or cabal configuration.
+- **Plans for another machine.** With `--compiler-id`, `--platform` and `--package-db` you can plan for a GHC you don't have installed, or for another OS or architecture. For example, you can make an aarch64-linux plan on a macOS laptop.
+- **Other build systems.** The JSON plan lists every unit to build, with its component, flags and dependencies. For each package it also has the sha256 and size of the source tarball, and the revision, sha256 and size of the `.cabal` file. With that, a build system other than cabal-install (Buck2, Bazel, Nix, …) can fetch and build exactly what the solver chose, without running cabal.
+- **Solver experiments and bug reports.** You see the solver's full trace. You can try a constraint, a flag, another compiler, or `--prefer-oldest` (to test lower bounds) without editing a project file. And you can turn a solver problem into a single command that anyone can run.
+
+It runs cabal-install's own solver, from the cabal-install 3.18 library, with cabal-install's defaults. Its JSON plans have been checked against cabal-install's for several packages.
+
+It does not:
+- build anything, or download source packages;
+- plan test suites or benchmarks;
+- plan Backpack packages (`--json` refuses them);
+- use repositories that aren't secure (hackage-security) repositories.
+
 ## Install
 
 Download an archive for your platform from the [releases](https://github.com/andreabedini/cabal-solver-plan/releases) and unpack it. There are binaries for x86_64 and aarch64 Linux, x86_64 and aarch64 macOS, and x86_64 Windows. `SHA256SUMS` has their checksums.
@@ -32,13 +49,13 @@ Without a package index, the only packages are the ones GHC comes with (`--use-g
 
 ```
 ❯ cabal-solver-plan --with-ghc ghc-9.12.2 --use-global-packagedb mtl
-[__0] trying: mtl-2.3.1/installed-6d75 (user goal)
-[__1] trying: base-4.21.0.0/installed-b7a5 (dependency of mtl)
+[__0] trying: mtl-2.3.1/installed-34ff (user goal)
+[__1] trying: base-4.21.0.0/installed-5b43 (dependency of mtl)
 …
-[__6] done
+[__7] done
 rts-1.0.2/installed-1.0.2
 
-ghc-prim-0.13.0/installed-00de
+ghc-prim-0.13.0/installed-ca1e
 lib	rts-1.0.2/installed-1.0.2
 …
 ```
@@ -82,3 +99,11 @@ cabal-solver-plan --compiler-id ghc-9.12.2 --platform x86_64-linux \
 ```
 
 With `--compiler-id` there are no pre-installed packages, so the solver will want to build `base` and other boot packages from source, which usually fails. Use `--package-db` (a directory of `.conf` files) or `--with-preinstalled PKGID[:LIB]` to tell it what is installed. `--json` only accepts packages from `--package-db`.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
