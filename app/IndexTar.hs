@@ -102,7 +102,7 @@ readIndex repo mCutoff =
                         , included (Tar.entryTime entry) -> do
                             let ref = EntryRef off size
                                 ts' = max ts (epochTimeToTimestamp (Tar.entryTime entry))
-                            case splitDirectories (Tar.entryPath entry) of
+                            case splitDirectories (Tar.fromTarPathToPosixPath (Tar.entryTarPath entry)) of
                                 [name, ver, file]
                                     | Just pkgid <- packageId name ver
                                     , file == name ++ ".cabal" ->
