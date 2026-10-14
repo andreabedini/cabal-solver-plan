@@ -360,6 +360,8 @@ data CompilerOptions = CompilerOptions
     { withCompiler :: Maybe FilePath
     , compilerDeprecations :: [String]
     , noGlobalPackageDb :: Bool
+    , useGlobalPackageDb :: Bool
+    -- ^ The deprecated --use-global-packagedb, which asks for the default.
     , inlineCompilerId :: Maybe CompilerId
     , inlineAbiTag :: Maybe AbiTag
     , inlineCompat :: Maybe [CompilerId]
@@ -376,6 +378,8 @@ toCompilerSource CompilerOptions{..} = case inlineCompilerId of
                 intercalate ", " describing
                     ++ " describe the compiler given by --compiler-id. Give --compiler-id too,"
                     ++ " or leave them out to plan for the GHC that --with-compiler runs."
+        | noGlobalPackageDb && useGlobalPackageDb ->
+            Left "--use-global-packagedb and --no-global-package-db contradict each other: give one of them."
         | otherwise ->
             Right (CompilerFromSystem (fromMaybe "ghc" withCompiler) (not noGlobalPackageDb))
     Just compilerId
@@ -384,9 +388,10 @@ toCompilerSource CompilerOptions{..} = case inlineCompilerId of
                 "--with-compiler and --compiler-id cannot be used together: --with-compiler runs"
                     ++ " a GHC to find its id, platform and global package db, while --compiler-id"
                     ++ " describes a compiler without running it."
-        | noGlobalPackageDb ->
+        | noGlobalPackageDb || useGlobalPackageDb ->
             Left $
-                "--no-global-package-db goes with --with-compiler. With --compiler-id there is"
+                (if noGlobalPackageDb then "--no-global-package-db" else "--use-global-packagedb")
+                    ++ " goes with --with-compiler. With --compiler-id there is"
                     ++ " no global package db; give the installed packages with --package-db."
         | otherwise ->
             Right $
@@ -493,6 +498,7 @@ compilerOptionsParser =
                 ["--with-ghc is deprecated, use --with-compiler (-w)." | Just _ <- [withGhc]]
                     ++ ["--use-global-packagedb is deprecated: the global package db is loaded by default." | useGlobal]
             , noGlobalPackageDb = noGlobal
+            , useGlobalPackageDb = useGlobal
             , inlineCompilerId = cid
             , inlineAbiTag = abi
             , inlineCompat = compat
