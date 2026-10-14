@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 {- HLINT ignore "Functor law" -}
 
 module Options (
@@ -8,15 +9,18 @@ module Options (
 )
 where
 
+import Colog.Core (Severity (..))
+import Data.List (intercalate)
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Version (showVersion)
 import Distribution.Client.IndexUtils.IndexState
 import Distribution.Client.Setup (defaultMaxBackjumps)
 import Distribution.Client.Targets
 import Distribution.Client.Types.Repo
 import Distribution.Compat.CharParsing qualified as P
+import Distribution.Compiler (CompilerId)
 import Distribution.PackageDescription (
     ComponentName (..),
     LibraryName (..),
@@ -48,8 +52,8 @@ import Distribution.System (Platform, buildPlatform)
 import Distribution.Types.Flag (FlagAssignment)
 import Distribution.Types.PackageVersionConstraint
 import Distribution.Verbosity qualified as Verbosity
+import Language.Haskell.Extension (Extension, Language)
 import Network.URI (URI (..), parseAbsoluteURI)
-import Colog.Core (Severity (..))
 import Options.Applicative
 import Paths_cabal_solver_plan (version)
 
@@ -73,8 +77,7 @@ import Paths_cabal_solver_plan (version)
 -- adapted the command line options so that the user can specify directly
 -- aeson-2.2.0.0 as target.
 data Options = Options
-    { compilerSource :: CompilerSource
-    , extraPackageDbs :: [FilePath]
+    { extraPackageDbs :: [FilePath]
     , extraPreInstalled :: [(PackageId, ComponentName)]
     , repositories :: [Either URI RemoteRepo]
     , indexTar :: Maybe FilePath
@@ -93,19 +96,35 @@ data Options = Options
     , jsonOutput :: Bool
     , logLevel :: Severity
     , targets :: [PackageVersionConstraint]
+    , deprecations :: [String]
+    -- ^ Advice for each deprecated option that was used.
+    , compilerSource :: CompilerSource
     }
 
 parseOptions :: IO Options
-parseOptions = execParser opts
+parseOptions = do
+    result <- customExecParser parserPrefs opts
+    case result of
+        Right options -> return options
+        Left err -> handleParseResult (Failure (parserFailure parserPrefs opts (ErrorMsg err) []))
 
-opts :: ParserInfo Options
+parserPrefs :: ParserPrefs
+parserPrefs = defaultPrefs
+
+-- | The options, or what is wrong with their combination.
+opts :: ParserInfo (Either String Options)
 opts = info (s <**> helper <**> simpleVersioner ("cabal-solver-plan " ++ showVersion version)) mods
   where
-    s :: Parser Options
+    s :: Parser (Either String Options)
     s =
+        (\co mkOptions -> mkOptions (compilerDeprecations co) <$> toCompilerSource co)
+            <$> compilerOptionsParser
+            <*> rest
+
+    rest :: Parser ([String] -> CompilerSource -> Options)
+    rest =
         Options
-            <$> compilerSourceParser
-            <*> many (strOption (long "package-db" <> metavar "PATH" <> help "Load packagedb at PATH"))
+            <$> many (strOption (long "package-db" <> metavar "PATH" <> help "Load packagedb at PATH"))
             <*> many extraPreInstalledParser
             <*> many repositoryParser
             <*> optional
@@ -193,88 +212,157 @@ withTrailingSlash uri
 hackageUri :: URI
 hackageUri = fromMaybe (error "hackageUri") (parseRepositoryUri "https://hackage.haskell.org/")
 
+-- | Where the compiler comes from: a real GHC, which is run to find its
+-- id, platform and global package db, or only a description of one.
 data CompilerSource
     = CompilerInline
         CompilerInfo
         Platform
     | CompilerFromSystem
-        -- | sdfsd
+        -- | The path or name of GHC
         FilePath
-        -- | Whether or not to load the compiler's global packagedb
+        -- | Whether to load the compiler's global package db
         Bool
 
-compilerSourceParser :: Parser CompilerSource
-compilerSourceParser =
-    compilerFromSystem <|> compilerInline
+-- | The compiler options as given. 'toCompilerSource' checks that they go
+-- together.
+data CompilerOptions = CompilerOptions
+    { withCompiler :: Maybe FilePath
+    , compilerDeprecations :: [String]
+    , noGlobalPackageDb :: Bool
+    , inlineCompilerId :: Maybe CompilerId
+    , inlineAbiTag :: Maybe AbiTag
+    , inlineCompat :: Maybe [CompilerId]
+    , inlineLanguages :: Maybe [Language]
+    , inlineExtensions :: Maybe [Extension]
+    , inlinePlatform :: Maybe Platform
+    }
+
+toCompilerSource :: CompilerOptions -> Either String CompilerSource
+toCompilerSource CompilerOptions{..} = case inlineCompilerId of
+    Nothing
+        | not (null describing) ->
+            Left $
+                intercalate ", " describing
+                    ++ " describe the compiler given by --compiler-id. Give --compiler-id too,"
+                    ++ " or leave them out to plan for the GHC that --with-compiler runs."
+        | otherwise ->
+            Right (CompilerFromSystem (fromMaybe "ghc" withCompiler) (not noGlobalPackageDb))
+    Just compilerId
+        | Just _ <- withCompiler ->
+            Left $
+                "--with-compiler and --compiler-id cannot be used together: --with-compiler runs"
+                    ++ " a GHC to find its id, platform and global package db, while --compiler-id"
+                    ++ " describes a compiler without running it."
+        | noGlobalPackageDb ->
+            Left $
+                "--no-global-package-db goes with --with-compiler. With --compiler-id there is"
+                    ++ " no global package db; give the installed packages with --package-db."
+        | otherwise ->
+            Right $
+                CompilerInline
+                    CompilerInfo
+                        { compilerInfoId = compilerId
+                        , compilerInfoAbiTag = fromMaybe NoAbiTag inlineAbiTag
+                        , compilerInfoCompat = inlineCompat
+                        , compilerInfoLanguages = inlineLanguages
+                        , compilerInfoExtensions = inlineExtensions
+                        , -- Wired-in unit ids are unknown; the solver then acts pessimistically.
+                          compilerInfoWiredInUnitIds = Nothing
+                        }
+                    (fromMaybe buildPlatform inlinePlatform)
   where
-    compilerFromSystem =
-        CompilerFromSystem
-            <$> strOption
-                ( long "with-ghc"
-                    <> help "Use an installed compiler available at PATH."
+    describing =
+        [ flagName
+        | (flagName, given) <-
+            [ ("--platform", isJust inlinePlatform)
+            , ("--abi-tag", isJust inlineAbiTag)
+            , ("--compiler-id-compat", isJust inlineCompat)
+            , ("--supported-language", isJust inlineLanguages)
+            , ("--supported-extension", isJust inlineExtensions)
+            ]
+        , given
+        ]
+
+compilerOptionsParser :: Parser CompilerOptions
+compilerOptionsParser =
+    mkCompilerOptions
+        <$> optional
+            ( strOption
+                ( short 'w'
+                    <> long "with-compiler"
                     <> metavar "PATH"
-                    <> value "ghc"
-                    <> showDefault
+                    <> help "Plan for this GHC, a path or a program on the PATH (default: ghc). It is run to find its version, platform and global package db."
                 )
-            <*> switch
-                ( long "use-global-packagedb"
-                    <> help "Use the compiler's global package db"
-                )
-
-    compilerInline =
-        CompilerInline
-            <$> compilerInfoOption
-            <*> platformOption
-
-    compilerInfoOption =
-        CompilerInfo
-            <$> parsecOption
-                ( long "compiler-id"
-                    <> help "Compiler flavour and version. E.g \"ghc-9.4.7\"."
-                    <> metavar "COMPILER-ID"
-                )
-            <*> parsecOption
-                ( long "abi-tag"
-                    <> help "Tag for distinguishing incompatible ABI's on the same architecture/os."
-                    <> metavar "ABI-TAG"
-                    <> value NoAbiTag
-                    <> showDefaultWith (const "no tag")
-                )
-            <*> optional
-                ( unCommaSeparated
-                    <$> parsecOption
-                        ( long "compiler-id-compat"
-                            <> help "Other implementations that this compiler claims to be compatible with, if known."
-                            <> metavar "COMPILER-ID"
-                        )
-                )
-            <*> optional
-                ( unCommaSeparated
-                    <$> parsecOption
-                        ( long "supported-language"
-                            <> help "Supported language standards, if known. If no language standard is specified the solver assumes any standard is supported."
-                            <> metavar "LANGUAGE"
-                        )
-                )
-            <*> optional
-                ( unCommaSeparated
-                    <$> parsecOption
-                        ( long "supported-extension"
-                            <> help "Supported extensions, if known. If no extension is specified the solver assumes any extension is supported."
-                            <> metavar "EXTENSION"
-                        )
-                )
-            -- Wired-in unit ids are unknown; the solver then acts pessimistically.
-            <*> pure Nothing
-
-    platformOption =
-        parsecOption
-            ( long "platform"
-                <> help "The desired platform for the build plan."
-                <> metavar "PLATFORM"
-                <> value buildPlatform
-                <> showDefaultWith Cabal.prettyShow
             )
+        -- The old name of --with-compiler.
+        <*> optional (strOption (long "with-ghc" <> metavar "PATH" <> internal))
+        <*> switch
+            ( long "no-global-package-db"
+                <> help "Do not load the global package db of --with-compiler's GHC."
+            )
+        -- The global package db is loaded by default now.
+        <*> switch (long "use-global-packagedb" <> internal)
+        <*> optional
+            ( parsecOption
+                ( long "compiler-id"
+                    <> metavar "COMPILER-ID"
+                    <> help "Plan for this compiler, e.g. ghc-9.12.2, without running it. There are no installed packages unless given with --package-db."
+                )
+            )
+        <*> optional
+            ( parsecOption
+                ( long "abi-tag"
+                    <> metavar "ABI-TAG"
+                    <> help "With --compiler-id: the tag that tells apart incompatible ABIs on the same platform (default: none)."
+                )
+            )
+        <*> optional
+            ( unCommaSeparated
+                <$> parsecOption
+                    ( long "compiler-id-compat"
+                        <> metavar "COMPILER-ID,..."
+                        <> help "With --compiler-id: other compilers it is compatible with."
+                    )
+            )
+        <*> optional
+            ( unCommaSeparated
+                <$> parsecOption
+                    ( long "supported-language"
+                        <> metavar "LANGUAGE,..."
+                        <> help "With --compiler-id: the language standards it supports (default: all)."
+                    )
+            )
+        <*> optional
+            ( unCommaSeparated
+                <$> parsecOption
+                    ( long "supported-extension"
+                        <> metavar "EXTENSION,..."
+                        <> help "With --compiler-id: the extensions it supports (default: all)."
+                    )
+            )
+        <*> optional
+            ( parsecOption
+                ( long "platform"
+                    <> metavar "PLATFORM"
+                    <> help ("With --compiler-id: the platform to plan for, e.g. aarch64-linux (default: " ++ Cabal.prettyShow buildPlatform ++ ").")
+                )
+            )
+  where
+    mkCompilerOptions withCompiler withGhc noGlobal useGlobal cid abi compat langs exts platform =
+        CompilerOptions
+            { withCompiler = withCompiler <|> withGhc
+            , compilerDeprecations =
+                ["--with-ghc is deprecated, use --with-compiler (-w)." | Just _ <- [withGhc]]
+                    ++ ["--use-global-packagedb is deprecated: the global package db is loaded by default." | useGlobal]
+            , noGlobalPackageDb = noGlobal
+            , inlineCompilerId = cid
+            , inlineAbiTag = abi
+            , inlineCompat = compat
+            , inlineLanguages = langs
+            , inlineExtensions = exts
+            , inlinePlatform = platform
+            }
 
 pkgConfEntryParser :: Parser (PkgconfigName, Maybe PkgconfigVersion)
 pkgConfEntryParser =
