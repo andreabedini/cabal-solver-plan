@@ -57,7 +57,7 @@ import Options
 import Plan (PackageSource (..), PlanInputs (..), makePlan, renderPlanJson, unsupportedUnits)
 import SetupDeps (applyDefaultSetupDeps)
 import SolverInterface (solve)
-import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, listDirectory)
+import System.Directory (XdgDirectory (..), createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getXdgDirectory, listDirectory)
 import System.Exit (exitFailure)
 import System.FilePath (takeDirectory, takeExtension, (</>))
 import System.IO (hPutStrLn, stderr)
@@ -105,7 +105,8 @@ main = do
                 pure cliPkgDb
 
     indexes <- do
-        fromRepositories <- loadRepositories logger verbosity repositories cacheDir offline
+        cacheDir' <- maybe (getXdgDirectory XdgCache "cabal-solver-plan") return cacheDir
+        fromRepositories <- loadRepositories logger verbosity repositories cacheDir' offline
         let fromIndex =
                 [ Repository
                     { repositoryName = maybe "index" uriRegName (uriAuthority indexUri)
