@@ -1,6 +1,6 @@
 # Plan format
 
-`cabal-solver-plan --json` prints a build plan in this format on stdout. Everything else (index loading, the solver trace) goes to stderr.
+`cabal-solver-plan --json` prints a build plan in this format on stdout. Everything else (progress, errors and, with `-v`, the solver's trace) goes to stderr.
 
 The output is pretty-printed with a fixed key order, so the same inputs give byte-identical output.
 
@@ -138,7 +138,7 @@ This is a difference from cabal-install's `plan.json`, which is written before p
 
 ### Backpack
 
-Backpack is not supported. An indefinite library (one with `signatures`) has to be instantiated, which gives extra units that this tool does not make. If a unit in the plan is such a library, or is an indefinite library from a package db, `cabal-solver-plan --json` prints nothing on stdout, names the units on stderr and exits with status 1. Libraries that only rename modules with `mixins` are fine.
+Backpack is not supported. An indefinite library (one with `signatures`) has to be instantiated, which gives extra units that this tool does not make. If a unit in the plan is such a library, or is an indefinite library from a package db, `cabal-solver-plan --json` prints nothing on stdout, names the units on stderr and exits with status 1, as when no plan is found. Libraries that only rename modules with `mixins` are fine.
 
 ### Packages from `--with-preinstalled`
 
