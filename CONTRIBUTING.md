@@ -7,7 +7,7 @@ Bug reports and pull requests are welcome.
 Please include:
 - the output of `cabal-solver-plan --version`;
 - the full command you ran;
-- what it printed, including the solver trace on stderr;
+- what it printed on stderr, with `-v` so that it includes the solver's trace;
 - what you expected instead. If cabal-install gives a different plan, say which version of cabal-install, and how you ran it.
 
 ## Building
@@ -26,11 +26,11 @@ cabal build -w ghc-9.14.1
 tests/run.sh "$(cabal list-bin -w ghc-9.14.1 cabal-solver-plan)"
 ```
 
-It needs a `ghc` on the `PATH` (or set `GHC`). The first run downloads Hackage's index, about 1.2 GB, into `_cache` (or `$CACHE_DIR`).
+It needs a `ghc` on the `PATH` (or set `GHC`). The first run downloads Hackage's index, about 1.2 GB, into `_cache` in the repository (or `$CACHE_DIR`).
 
 The golden tests compare JSON plans with `tests/golden/`. If you change the output on purpose, run the tests with `UPDATE_GOLDEN=1` to rewrite the golden files, and check the diff. A change to the JSON format also needs a matching change to [docs/plan-format.md](docs/plan-format.md) and [examples/](examples/).
 
-CI builds and tests every pull request on Linux, macOS and Windows.
+Besides the golden plans, it checks the exit status of usage errors (2), of no plan (1) and of other errors (3). CI builds and tests every pull request on Linux, macOS and Windows.
 
 ## Code style
 

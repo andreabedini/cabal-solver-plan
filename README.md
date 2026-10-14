@@ -9,7 +9,7 @@ The inputs are:
 - local packages;
 - constraints, flags and solver settings.
 
-The solver trace goes to stderr. The plan goes to stdout, as text, or as JSON with `--json` (see [docs/plan-format.md](docs/plan-format.md)).
+The plan goes to stdout, as text, or as JSON with `--json` (see [docs/plan-format.md](docs/plan-format.md)). Progress, errors and, with `-v`, the solver's trace go to stderr.
 
 ## Why
 
@@ -43,16 +43,28 @@ cabal build -w ghc-9.14.1
 
 Run `cabal-solver-plan --help` for all options.
 
-## Examples
-
-Without a package index, the only packages are the ones GHC comes with (`--use-global-packagedb`):
+## Usage
 
 ```
-❯ cabal-solver-plan --with-ghc ghc-9.12.2 --use-global-packagedb mtl
-[__0] trying: mtl-2.3.1/installed-34ff (user goal)
-[__1] trying: base-4.21.0.0/installed-5b43 (dependency of mtl)
-…
-[__7] done
+cabal-solver-plan [OPTIONS] TARGET...
+```
+
+The TARGETs are packages to plan for, such as `aeson`, or `aeson-2.2.0.0` for that version. By default the compiler is the `ghc` on the `PATH` (or `-w PATH`), with its global package db. `cabal-solver-plan --help` lists all the options, in groups, with examples.
+
+The plan goes to stdout. Progress and errors go to stderr: `-v` adds the solver's trace, and `-q` leaves out everything but warnings and errors.
+
+The exit status is:
+- 0: a plan was found;
+- 1: no plan was found (the solver says why);
+- 2: usage error;
+- 3: any other error, e.g. a file that cannot be read.
+
+## Examples
+
+Without a package index, the only packages are the ones installed with GHC:
+
+```
+❯ cabal-solver-plan -w ghc-9.12.2 mtl
 rts-1.0.2/installed-1.0.2
 
 ghc-prim-0.13.0/installed-ca1e
@@ -60,24 +72,22 @@ lib	rts-1.0.2/installed-1.0.2
 …
 ```
 
-Download (or update) Hackage's index into `--cache-dir` (default `_cache`) and solve with it:
+Download (or update) Hackage's index into the cache directory, and solve with it. The cache directory is `cabal-solver-plan` in `$XDG_CACHE_HOME` (usually `~/.cache`), or `%LOCALAPPDATA%` on Windows; `--cache-dir` changes it.
 
 ```
-cabal-solver-plan --with-ghc ghc-9.12.2 --use-global-packagedb \
-  --repository https://hackage.haskell.org/ aeson
+cabal-solver-plan --repository hackage.haskell.org:https://hackage.haskell.org/ aeson
 ```
 
-Use a repository again without contacting the network:
+Use the repository again without contacting the network:
 
 ```
-cabal-solver-plan --with-ghc ghc-9.12.2 --use-global-packagedb \
-  --repository https://hackage.haskell.org/ --offline aeson
+cabal-solver-plan --repository hackage.haskell.org:https://hackage.haskell.org/ --offline aeson
 ```
 
 Solve from an index tar alone, at a fixed index-state, and print the plan as JSON. The plan includes the hashes, sizes and `.cabal` revisions needed to fetch every package, all read from the index:
 
 ```
-cabal-solver-plan --with-ghc ghc-9.12.2 --use-global-packagedb \
+cabal-solver-plan -w ghc-9.12.2 \
   --index ~/index-copy/01-index.tar --index-state 2026-06-01T00:00:00Z \
   --json shake > shake.json
 ```
@@ -87,18 +97,18 @@ See [examples/](examples/) for the resulting plans.
 Plan for a local package (a directory with a `.cabal` file, as in `cabal.project`'s `packages:`):
 
 ```
-cabal-solver-plan --with-ghc ghc-9.12.2 --use-global-packagedb \
+cabal-solver-plan -w ghc-9.12.2 \
   --index ~/index-copy/01-index.tar --local-package ./my-package --json
 ```
 
-Without a compiler, give its id and platform instead of `--with-ghc`:
+Without a compiler, give its id and platform instead of `-w`:
 
 ```
 cabal-solver-plan --compiler-id ghc-9.12.2 --platform x86_64-linux \
-  --index ~/index-copy/01-index.tar --json text
+  --package-db ghc-9.12.2-db --index ~/index-copy/01-index.tar --json text
 ```
 
-With `--compiler-id` there are no pre-installed packages, so the solver will want to build `base` and other boot packages from source, which usually fails. Use `--package-db` (a directory of `.conf` files) or `--with-preinstalled PKGID[:LIB]` to tell it what is installed. `--json` only accepts packages from `--package-db`.
+With `--compiler-id` there are no installed packages unless you give them, and the solver cannot build `base` and the other boot packages from source. Give the compiler's package db with `--package-db` (a directory of `.conf` files), or name installed packages with `--with-preinstalled PKGID[:LIB]`. `--json` only accepts packages from `--package-db`.
 
 ## Contributing
 
