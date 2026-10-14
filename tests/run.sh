@@ -21,9 +21,20 @@ trap 'rm -rf "$tmp"' EXIT
 failures=0
 
 pass() { printf 'PASS %s\n' "$1"; }
+
+# fail NAME [FILE]: report a failure, with the end of FILE if given. On
+# GitHub Actions it is also an annotation, which, unlike the log, anyone
+# can read through the API.
 fail() {
     printf 'FAIL %s\n' "$1"
     failures=$((failures + 1))
+    if [ -n "${2:-}" ]; then
+        tail -n 50 "$2"
+    fi
+    if [ "${GITHUB_ACTIONS:-}" = true ]; then
+        details=$(if [ -n "${2:-}" ]; then tail -n 20 "$2"; fi | tr -d '\r' | sed 's/%/%25/g' | awk '{ printf "%s%%0A", $0 }')
+        printf '::error title=tests/run.sh %s::%s\n' "$1" "$details"
+    fi
 }
 
 # check NAME CMD...: run CMD, with stdout in $tmp/NAME.out; show its stderr if it fails.
@@ -33,8 +44,7 @@ check() {
     if "$@" >"$tmp/$name.out" 2>"$tmp/$name.err"; then
         pass "$name"
     else
-        fail "$name"
-        tail -n 50 "$tmp/$name.err"
+        fail "$name" "$tmp/$name.err"
         return 1
     fi
 }
@@ -49,16 +59,14 @@ check_exit() {
     if [ "$actual" -eq "$code" ]; then
         pass "$name"
     else
-        fail "$name (exit $actual, expected $code)"
-        tail -n 20 "$tmp/$name.err"
+        fail "$name (exit $actual, expected $code)" "$tmp/$name.err"
     fi
 }
 
 version=$(sed -n 's/^version: *//p' cabal-solver-plan.cabal)
 if check version "$bin" --version; then
     if [ "$(tr -d '\r' <"$tmp/version.out")" != "cabal-solver-plan $version" ]; then
-        fail "version is $version"
-        cat "$tmp/version.out"
+        fail "version is $version" "$tmp/version.out"
     fi
 fi
 
@@ -73,8 +81,7 @@ check_exit conflicting-options 2 "$bin" --compiler-id ghc-9.12.2 -w "$ghc" mtl
 check_exit no-plan 1 "$bin" -w "$ghc" no-such-package
 check_exit missing-package-db 3 "$bin" -w "$ghc" --package-db tests/no-such-db mtl
 if grep -q -i exception "$tmp/missing-package-db.err"; then
-    fail "missing-package-db prints no exception"
-    cat "$tmp/missing-package-db.err"
+    fail "missing-package-db prints no exception" "$tmp/missing-package-db.err"
 fi
 
 check with-compiler "$bin" -w "$ghc" mtl || true
@@ -95,8 +102,8 @@ for target in network shake; do
     if [ "${UPDATE_GOLDEN:-}" = 1 ]; then
         cp "$tmp/$target.json" "$golden"
     elif ! cmp -s "$golden" "$tmp/$target.json"; then
-        fail "golden-$target"
-        diff -u "$golden" "$tmp/$target.json" | head -n 100 || true
+        diff -u "$golden" "$tmp/$target.json" >"$tmp/$target.diff" || true
+        fail "golden-$target" "$tmp/$target.diff"
     else
         pass "golden-$target"
     fi
