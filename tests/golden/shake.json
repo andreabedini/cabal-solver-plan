@@ -1,0 +1,961 @@
+{
+  "format": 3,
+  "compiler-id": "ghc-9.12.2",
+  "os": "linux",
+  "arch": "x86_64",
+  "index-state": {
+    "hackage.haskell.org": "2026-05-31T23:08:56Z"
+  },
+  "targets": [
+    "38",
+    "39"
+  ],
+  "packages": {
+    "clock-0.8.4": {
+      "name": "clock",
+      "version": "0.8.4",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "6ae9898afe788a5e334cd5fad5d18a3c2e8e59fa09aaf7b957dbb38a4767df2e",
+        "size": 9322
+      },
+      "cabal-file": {
+        "revision": 0,
+        "sha256": "b938655b00cf204ce69abfff946021bed111d2609a9f7a9c22e28a1a202e9115",
+        "size": 4631
+      }
+    },
+    "extra-1.8.1": {
+      "name": "extra",
+      "version": "1.8.1",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "66a7d6d718646a7bda822d67550dc185c6e25ad1f7fecf06fc132e300098b598",
+        "size": 47197
+      },
+      "cabal-file": {
+        "revision": 0,
+        "sha256": "b9c360f2f3fbff5ca04656b7aa0a91b254ac7de7e4b959bae4688a178ffd79d1",
+        "size": 2738
+      }
+    },
+    "filepattern-0.1.3": {
+      "name": "filepattern",
+      "version": "0.1.3",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "cc445d439ea2f65cac7604d3578aa2c3a62e5a91dc989f4ce5b3390db9e59636",
+        "size": 15495
+      },
+      "cabal-file": {
+        "revision": 0,
+        "sha256": "372c1733d83b90045eb29da9f010fed79bfef8771ce65eb126a1d83ecc54a9a2",
+        "size": 2454
+      }
+    },
+    "hashable-1.5.1.0": {
+      "name": "hashable",
+      "version": "1.5.1.0",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "ed0b7c10ce92c9ffe45420dadc38c6d39db486ff3633ff13567cc9f75f79b112",
+        "size": 90605
+      },
+      "cabal-file": {
+        "revision": 0,
+        "sha256": "140fc5adad166f7b527567cbd26ff481e8da4a66bdfc84be3ddf28dbeb66f275",
+        "size": 5787
+      }
+    },
+    "heaps-0.4.1": {
+      "name": "heaps",
+      "version": "0.4.1",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "8763a4663a2d0b3c912400a547d66ae11b46a954403b6747272148e950aa0382",
+        "size": 10303
+      },
+      "cabal-file": {
+        "revision": 0,
+        "sha256": "74ce60a23b8ef247b8bca71eeb38289e82b3b5e83b2383600b2c838a68218068",
+        "size": 1444
+      }
+    },
+    "js-dgtable-0.5.2": {
+      "name": "js-dgtable",
+      "version": "0.5.2",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "e28dd65bee8083b17210134e22e01c6349dc33c3b7bd17705973cd014e9f20ac",
+        "size": 49085
+      },
+      "cabal-file": {
+        "revision": 0,
+        "sha256": "f75cb4fa53c88c65794becdd48eb0d3b2b8abd89a3d5c19e87af91f5225c15e4",
+        "size": 1703
+      }
+    },
+    "js-flot-0.8.3": {
+      "name": "js-flot",
+      "version": "0.8.3",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "1ba2f2a6b8d85da76c41f526c98903cbb107f8642e506c072c1e7e3c20fe5e7a",
+        "size": 662691
+      },
+      "cabal-file": {
+        "revision": 0,
+        "sha256": "4c1c447a9a2fba0adba6d30678302a30c32b9dfde9e7aa9e9156483e1545096d",
+        "size": 1985
+      }
+    },
+    "js-jquery-3.7.1": {
+      "name": "js-jquery",
+      "version": "3.7.1",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "a087fa01a1c52f5386d43f5355f64841c5a4b56b53720090d66b5aa00bfeb106",
+        "size": 118393
+      },
+      "cabal-file": {
+        "revision": 0,
+        "sha256": "fdbdfd4d413848c678a3737f2b985a5db66b796c6847b1ae08246ea3795c0ba2",
+        "size": 1666
+      }
+    },
+    "primitive-0.9.1.0": {
+      "name": "primitive",
+      "version": "0.9.1.0",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "44b4de41813c7bc5db8a57f87c3612a069b65086946268ba165097252ebd3d76",
+        "size": 61724
+      },
+      "cabal-file": {
+        "revision": 1,
+        "sha256": "756b222c715bc6ef5ba81fa69cdbaa20c5c53beb6f16f174b8bacc93a6d239f0",
+        "size": 3258
+      }
+    },
+    "random-1.3.1": {
+      "name": "random",
+      "version": "1.3.1",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "d840ac83f265b0cfa2a678f8ec78627eb50cf9be2f067c52c8a4239c29b71a35",
+        "size": 63846
+      },
+      "cabal-file": {
+        "revision": 0,
+        "sha256": "0b4f649c3e78713b2ccad1535251ee34b148237fb2229d7058c2b1d9ccc324b8",
+        "size": 6004
+      }
+    },
+    "shake-0.19.9": {
+      "name": "shake",
+      "version": "0.19.9",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "4176d6e38c3b7813f019f2377466d9f01db842056eec1cdaa8a23b80ceddcb8a",
+        "size": 268241
+      },
+      "cabal-file": {
+        "revision": 0,
+        "sha256": "8704f35f7857f71adef2b74aafb5580f73dfab004a804718d418c16798f4a186",
+        "size": 15580
+      }
+    },
+    "splitmix-0.1.3.2": {
+      "name": "splitmix",
+      "version": "0.1.3.2",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "a61d4e8b30f5a16526d7d31171b674ae7924d2207f378060d13363bd8794de8c",
+        "size": 11373
+      },
+      "cabal-file": {
+        "revision": 0,
+        "sha256": "a557cff65eed1f70f3a3b468423cd58e7a9a9564c5cc00c76a13de64dec9bcbd",
+        "size": 3608
+      }
+    },
+    "unordered-containers-0.2.21": {
+      "name": "unordered-containers",
+      "version": "0.2.21",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "3b2ad1522b546e61960153257d1e5d239eeec5e83da847d5cb4d896a5bb7f9c0",
+        "size": 68227
+      },
+      "cabal-file": {
+        "revision": 2,
+        "sha256": "c5de1fb3377ed3c5f4cd851a771d1acc5c37d2f6bef0a499295c0e8857da5605",
+        "size": 3987
+      }
+    },
+    "utf8-string-1.0.2": {
+      "name": "utf8-string",
+      "version": "1.0.2",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "ee48deada7600370728c4156cb002441de770d0121ae33a68139a9ed9c19b09a",
+        "size": 10726
+      },
+      "cabal-file": {
+        "revision": 0,
+        "sha256": "79416292186feeaf1f60e49ac5a1ffae9bf1b120e040a74bf0e81ca7f1d31d3f",
+        "size": 1538
+      }
+    }
+  },
+  "units": {
+    "0": {
+      "type": "pre-existing",
+      "name": "rts",
+      "version": "1.0.2",
+      "qualified-names": [
+        "rts"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "rts-1.0.2",
+      "depends": []
+    },
+    "1": {
+      "type": "pre-existing",
+      "name": "ghc-prim",
+      "version": "0.13.0",
+      "qualified-names": [
+        "ghc-prim"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "ghc-prim-0.13.0-ca1e",
+      "depends": [
+        "0"
+      ]
+    },
+    "2": {
+      "type": "pre-existing",
+      "name": "ghc-bignum",
+      "version": "1.3",
+      "qualified-names": [
+        "ghc-bignum"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "ghc-bignum-1.3-700c",
+      "depends": [
+        "1"
+      ]
+    },
+    "3": {
+      "type": "pre-existing",
+      "name": "ghc-internal",
+      "version": "9.1202.0",
+      "qualified-names": [
+        "ghc-internal"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "ghc-internal-9.1202.0-59e9",
+      "depends": [
+        "2",
+        "1",
+        "0"
+      ]
+    },
+    "4": {
+      "type": "pre-existing",
+      "name": "base",
+      "version": "4.21.0.0",
+      "qualified-names": [
+        "base"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "base-4.21.0.0-5b43",
+      "depends": [
+        "3",
+        "1"
+      ]
+    },
+    "5": {
+      "type": "pre-existing",
+      "name": "array",
+      "version": "0.5.8.0",
+      "qualified-names": [
+        "array"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "array-0.5.8.0-78fc",
+      "depends": [
+        "4"
+      ]
+    },
+    "6": {
+      "type": "pre-existing",
+      "name": "deepseq",
+      "version": "1.5.1.0",
+      "qualified-names": [
+        "deepseq"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "deepseq-1.5.1.0-d09f",
+      "depends": [
+        "4",
+        "1"
+      ]
+    },
+    "7": {
+      "type": "pre-existing",
+      "name": "pretty",
+      "version": "1.1.3.6",
+      "qualified-names": [
+        "pretty"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "pretty-1.1.3.6-fe6c",
+      "depends": [
+        "4",
+        "6",
+        "1"
+      ]
+    },
+    "8": {
+      "type": "pre-existing",
+      "name": "ghc-boot-th",
+      "version": "9.12.2",
+      "qualified-names": [
+        "ghc-boot-th"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "ghc-boot-th-9.12.2-11fa",
+      "depends": [
+        "4",
+        "3",
+        "1",
+        "7"
+      ]
+    },
+    "9": {
+      "type": "pre-existing",
+      "name": "template-haskell",
+      "version": "2.23.0.0",
+      "qualified-names": [
+        "template-haskell"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "template-haskell-2.23.0.0-41f7",
+      "depends": [
+        "4",
+        "8"
+      ]
+    },
+    "10": {
+      "type": "pre-existing",
+      "name": "bytestring",
+      "version": "0.12.2.0",
+      "qualified-names": [
+        "bytestring"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "bytestring-0.12.2.0-3523",
+      "depends": [
+        "4",
+        "6",
+        "1",
+        "9"
+      ]
+    },
+    "11": {
+      "type": "pre-existing",
+      "name": "containers",
+      "version": "0.7",
+      "qualified-names": [
+        "containers"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "containers-0.7-40d4",
+      "depends": [
+        "5",
+        "4",
+        "6",
+        "9"
+      ]
+    },
+    "12": {
+      "type": "pre-existing",
+      "name": "binary",
+      "version": "0.8.9.3",
+      "qualified-names": [
+        "binary"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "binary-0.8.9.3-a29d",
+      "depends": [
+        "5",
+        "4",
+        "10",
+        "11"
+      ]
+    },
+    "13": {
+      "type": "pre-existing",
+      "name": "transformers",
+      "version": "0.6.1.2",
+      "qualified-names": [
+        "transformers"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "transformers-0.6.1.2-2dde",
+      "depends": [
+        "4"
+      ]
+    },
+    "14": {
+      "type": "pre-existing",
+      "name": "mtl",
+      "version": "2.3.1",
+      "qualified-names": [
+        "mtl"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "mtl-2.3.1-34ff",
+      "depends": [
+        "4",
+        "13"
+      ]
+    },
+    "15": {
+      "type": "pre-existing",
+      "name": "stm",
+      "version": "2.5.3.1",
+      "qualified-names": [
+        "stm"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "stm-2.5.3.1-4700",
+      "depends": [
+        "5",
+        "4"
+      ]
+    },
+    "16": {
+      "type": "pre-existing",
+      "name": "exceptions",
+      "version": "0.10.9",
+      "qualified-names": [
+        "exceptions"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "exceptions-0.10.9-a315",
+      "depends": [
+        "4",
+        "14",
+        "15",
+        "9",
+        "13"
+      ]
+    },
+    "17": {
+      "type": "pre-existing",
+      "name": "os-string",
+      "version": "2.0.7",
+      "qualified-names": [
+        "os-string"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "os-string-2.0.7-6e72",
+      "depends": [
+        "4",
+        "10",
+        "6",
+        "16",
+        "9"
+      ]
+    },
+    "18": {
+      "type": "pre-existing",
+      "name": "filepath",
+      "version": "1.5.4.0",
+      "qualified-names": [
+        "filepath"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "filepath-1.5.4.0-04d4",
+      "depends": [
+        "4",
+        "10",
+        "6",
+        "16",
+        "17",
+        "9"
+      ]
+    },
+    "19": {
+      "type": "pre-existing",
+      "name": "time",
+      "version": "1.14",
+      "qualified-names": [
+        "time"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "time-1.14-0c3b",
+      "depends": [
+        "4",
+        "6",
+        "9"
+      ]
+    },
+    "20": {
+      "type": "pre-existing",
+      "name": "unix",
+      "version": "2.8.6.0",
+      "qualified-names": [
+        "unix"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "unix-2.8.6.0-402c",
+      "depends": [
+        "4",
+        "10",
+        "18",
+        "17",
+        "19"
+      ]
+    },
+    "21": {
+      "type": "pre-existing",
+      "name": "file-io",
+      "version": "0.1.5",
+      "qualified-names": [
+        "file-io"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "file-io-0.1.5-c59f",
+      "depends": [
+        "4",
+        "10",
+        "6",
+        "18",
+        "17",
+        "20"
+      ]
+    },
+    "22": {
+      "type": "pre-existing",
+      "name": "directory",
+      "version": "1.3.9.0",
+      "qualified-names": [
+        "directory"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "directory-1.3.9.0-cbf1",
+      "depends": [
+        "4",
+        "21",
+        "18",
+        "17",
+        "19",
+        "20"
+      ]
+    },
+    "23": {
+      "type": "pre-existing",
+      "name": "process",
+      "version": "1.6.25.0",
+      "qualified-names": [
+        "process"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "process-1.6.25.0-3594",
+      "depends": [
+        "4",
+        "6",
+        "22",
+        "18",
+        "20"
+      ]
+    },
+    "24": {
+      "type": "configured",
+      "package": "clock-0.8.4",
+      "build-style": "per-component",
+      "qualified-names": [
+        "clock"
+      ],
+      "component": "lib",
+      "flags": {
+        "llvm": false
+      },
+      "depends": [
+        "4"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "25": {
+      "type": "configured",
+      "package": "extra-1.8.1",
+      "build-style": "per-component",
+      "qualified-names": [
+        "extra"
+      ],
+      "component": "lib",
+      "flags": {},
+      "depends": [
+        "4",
+        "24",
+        "22",
+        "18",
+        "23",
+        "19",
+        "20"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "26": {
+      "type": "configured",
+      "package": "filepattern-0.1.3",
+      "build-style": "per-component",
+      "qualified-names": [
+        "filepattern"
+      ],
+      "component": "lib",
+      "flags": {},
+      "depends": [
+        "4",
+        "22",
+        "25",
+        "18"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "27": {
+      "type": "pre-existing",
+      "name": "text",
+      "version": "2.1.2",
+      "qualified-names": [
+        "text"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "text-2.1.2-255a",
+      "depends": [
+        "5",
+        "4",
+        "12",
+        "10",
+        "6",
+        "1",
+        "9"
+      ]
+    },
+    "28": {
+      "type": "configured",
+      "package": "hashable-1.5.1.0",
+      "build-style": "per-component",
+      "qualified-names": [
+        "hashable"
+      ],
+      "component": "lib",
+      "flags": {
+        "arch-native": false,
+        "random-initial-seed": false
+      },
+      "depends": [
+        "4",
+        "10",
+        "11",
+        "6",
+        "18",
+        "17",
+        "27"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "29": {
+      "type": "configured",
+      "package": "heaps-0.4.1",
+      "build-style": "per-component",
+      "qualified-names": [
+        "heaps"
+      ],
+      "component": "lib",
+      "flags": {},
+      "depends": [
+        "4"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "30": {
+      "type": "configured",
+      "package": "js-dgtable-0.5.2",
+      "build-style": "per-component",
+      "qualified-names": [
+        "js-dgtable"
+      ],
+      "component": "lib",
+      "flags": {},
+      "depends": [
+        "4"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "31": {
+      "type": "configured",
+      "package": "js-flot-0.8.3",
+      "build-style": "per-component",
+      "qualified-names": [
+        "js-flot"
+      ],
+      "component": "lib",
+      "flags": {},
+      "depends": [
+        "4"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "32": {
+      "type": "configured",
+      "package": "js-jquery-3.7.1",
+      "build-style": "per-component",
+      "qualified-names": [
+        "js-jquery"
+      ],
+      "component": "lib",
+      "flags": {},
+      "depends": [
+        "4"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "33": {
+      "type": "configured",
+      "package": "primitive-0.9.1.0",
+      "build-style": "per-component",
+      "qualified-names": [
+        "primitive"
+      ],
+      "component": "lib",
+      "flags": {},
+      "depends": [
+        "4",
+        "6",
+        "9",
+        "13"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "34": {
+      "type": "configured",
+      "package": "splitmix-0.1.3.2",
+      "build-style": "per-component",
+      "qualified-names": [
+        "splitmix"
+      ],
+      "component": "lib",
+      "flags": {
+        "optimised-mixer": false
+      },
+      "depends": [
+        "4",
+        "6"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "35": {
+      "type": "configured",
+      "package": "random-1.3.1",
+      "build-style": "per-component",
+      "qualified-names": [
+        "random"
+      ],
+      "component": "lib",
+      "flags": {},
+      "depends": [
+        "4",
+        "10",
+        "6",
+        "14",
+        "34",
+        "13"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "36": {
+      "type": "configured",
+      "package": "unordered-containers-0.2.21",
+      "build-style": "per-component",
+      "qualified-names": [
+        "unordered-containers"
+      ],
+      "component": "lib",
+      "flags": {
+        "debug": false
+      },
+      "depends": [
+        "4",
+        "6",
+        "28",
+        "9"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "37": {
+      "type": "configured",
+      "package": "utf8-string-1.0.2",
+      "build-style": "per-component",
+      "qualified-names": [
+        "utf8-string"
+      ],
+      "component": "lib",
+      "flags": {},
+      "depends": [
+        "4",
+        "10"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "38": {
+      "type": "configured",
+      "package": "shake-0.19.9",
+      "build-style": "per-component",
+      "qualified-names": [
+        "shake"
+      ],
+      "component": "lib",
+      "flags": {
+        "cloud": false,
+        "embed-files": false,
+        "portable": false,
+        "threaded": true
+      },
+      "depends": [
+        "4",
+        "12",
+        "10",
+        "6",
+        "22",
+        "25",
+        "18",
+        "26",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "23",
+        "35",
+        "19",
+        "13",
+        "20",
+        "36",
+        "37"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "39": {
+      "type": "configured",
+      "package": "shake-0.19.9",
+      "build-style": "per-component",
+      "qualified-names": [
+        "shake"
+      ],
+      "component": "exe:shake",
+      "flags": {
+        "cloud": false,
+        "embed-files": false,
+        "portable": false,
+        "threaded": true
+      },
+      "depends": [
+        "4",
+        "12",
+        "10",
+        "6",
+        "22",
+        "25",
+        "18",
+        "26",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "23",
+        "35",
+        "19",
+        "13",
+        "20",
+        "36",
+        "37"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    }
+  }
+}

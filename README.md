@@ -11,7 +11,14 @@ The inputs are:
 
 The solver trace goes to stderr. The plan goes to stdout, as text, or as JSON with `--json` (see [docs/plan-format.md](docs/plan-format.md)).
 
-Build it with GHC 9.12 or 9.14:
+## Install
+
+Download an archive for your platform from the [releases](https://github.com/andreabedini/cabal-solver-plan/releases) and unpack it. There are binaries for x86_64 and aarch64 Linux, x86_64 and aarch64 macOS, and x86_64 Windows. `SHA256SUMS` has their checksums.
+
+- Linux binaries need glibc 2.35 or newer (e.g. Ubuntu 22.04, Debian 12, RHEL 10), libgmp and zlib.
+- macOS binaries are not notarised. Remove the quarantine attribute before running one: `xattr -d com.apple.quarantine cabal-solver-plan`.
+
+Or build it with GHC 9.12 or 9.14:
 
 ```
 cabal build -w ghc-9.14.1

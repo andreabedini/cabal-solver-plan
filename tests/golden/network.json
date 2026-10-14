@@ -1,0 +1,486 @@
+{
+  "format": 3,
+  "compiler-id": "ghc-9.12.2",
+  "os": "linux",
+  "arch": "x86_64",
+  "index-state": {
+    "hackage.haskell.org": "2026-05-31T23:08:56Z"
+  },
+  "targets": [
+    "24"
+  ],
+  "packages": {
+    "hsc2hs-0.68.10": {
+      "name": "hsc2hs",
+      "version": "0.68.10",
+      "build-type": "Simple",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "6f4e34d788fe2ca7091ee0a10307ee8a7c060a1ba890f2bffad16a7d4d5cef76",
+        "size": 40517
+      },
+      "cabal-file": {
+        "revision": 5,
+        "sha256": "39b25fd929b02b01a3fe59fec7ca8b2da6f0f9e282276b7a84e63a4702c4d725",
+        "size": 3131
+      }
+    },
+    "network-3.2.8.0": {
+      "name": "network",
+      "version": "3.2.8.0",
+      "build-type": "Configure",
+      "src": {
+        "type": "repo-tar",
+        "repo": "https://hackage.haskell.org/",
+        "sha256": "51788e5eeb7d77264f260acd48df8055a4dbc2477e8d634a8493677bb15c5fc8",
+        "size": 146148
+      },
+      "cabal-file": {
+        "revision": 0,
+        "sha256": "c6f02f2626d1d83b3e3521fc2a9832c366e31dd391cb8478bd2d83528459e786",
+        "size": 5305
+      }
+    }
+  },
+  "units": {
+    "0": {
+      "type": "pre-existing",
+      "name": "rts",
+      "version": "1.0.2",
+      "qualified-names": [
+        "network:hsc2hs:exe.rts",
+        "rts"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "rts-1.0.2",
+      "depends": []
+    },
+    "1": {
+      "type": "pre-existing",
+      "name": "ghc-prim",
+      "version": "0.13.0",
+      "qualified-names": [
+        "ghc-prim",
+        "network:hsc2hs:exe.ghc-prim"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "ghc-prim-0.13.0-ca1e",
+      "depends": [
+        "0"
+      ]
+    },
+    "2": {
+      "type": "pre-existing",
+      "name": "ghc-bignum",
+      "version": "1.3",
+      "qualified-names": [
+        "ghc-bignum",
+        "network:hsc2hs:exe.ghc-bignum"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "ghc-bignum-1.3-700c",
+      "depends": [
+        "1"
+      ]
+    },
+    "3": {
+      "type": "pre-existing",
+      "name": "ghc-internal",
+      "version": "9.1202.0",
+      "qualified-names": [
+        "ghc-internal",
+        "network:hsc2hs:exe.ghc-internal"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "ghc-internal-9.1202.0-59e9",
+      "depends": [
+        "2",
+        "1",
+        "0"
+      ]
+    },
+    "4": {
+      "type": "pre-existing",
+      "name": "base",
+      "version": "4.21.0.0",
+      "qualified-names": [
+        "base",
+        "network:hsc2hs:exe.base"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "base-4.21.0.0-5b43",
+      "depends": [
+        "3",
+        "1"
+      ]
+    },
+    "5": {
+      "type": "pre-existing",
+      "name": "deepseq",
+      "version": "1.5.1.0",
+      "qualified-names": [
+        "deepseq",
+        "network:hsc2hs:exe.deepseq"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "deepseq-1.5.1.0-d09f",
+      "depends": [
+        "4",
+        "1"
+      ]
+    },
+    "6": {
+      "type": "pre-existing",
+      "name": "pretty",
+      "version": "1.1.3.6",
+      "qualified-names": [
+        "network:hsc2hs:exe.pretty",
+        "pretty"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "pretty-1.1.3.6-fe6c",
+      "depends": [
+        "4",
+        "5",
+        "1"
+      ]
+    },
+    "7": {
+      "type": "pre-existing",
+      "name": "ghc-boot-th",
+      "version": "9.12.2",
+      "qualified-names": [
+        "ghc-boot-th",
+        "network:hsc2hs:exe.ghc-boot-th"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "ghc-boot-th-9.12.2-11fa",
+      "depends": [
+        "4",
+        "3",
+        "1",
+        "6"
+      ]
+    },
+    "8": {
+      "type": "pre-existing",
+      "name": "template-haskell",
+      "version": "2.23.0.0",
+      "qualified-names": [
+        "network:hsc2hs:exe.template-haskell",
+        "template-haskell"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "template-haskell-2.23.0.0-41f7",
+      "depends": [
+        "4",
+        "7"
+      ]
+    },
+    "9": {
+      "type": "pre-existing",
+      "name": "bytestring",
+      "version": "0.12.2.0",
+      "qualified-names": [
+        "bytestring",
+        "network:hsc2hs:exe.bytestring"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "bytestring-0.12.2.0-3523",
+      "depends": [
+        "4",
+        "5",
+        "1",
+        "8"
+      ]
+    },
+    "10": {
+      "type": "pre-existing",
+      "name": "transformers",
+      "version": "0.6.1.2",
+      "qualified-names": [
+        "network:hsc2hs:exe.transformers",
+        "transformers"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "transformers-0.6.1.2-2dde",
+      "depends": [
+        "4"
+      ]
+    },
+    "11": {
+      "type": "pre-existing",
+      "name": "mtl",
+      "version": "2.3.1",
+      "qualified-names": [
+        "mtl",
+        "network:hsc2hs:exe.mtl"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "mtl-2.3.1-34ff",
+      "depends": [
+        "4",
+        "10"
+      ]
+    },
+    "12": {
+      "type": "pre-existing",
+      "name": "array",
+      "version": "0.5.8.0",
+      "qualified-names": [
+        "array",
+        "network:hsc2hs:exe.array"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "array-0.5.8.0-78fc",
+      "depends": [
+        "4"
+      ]
+    },
+    "13": {
+      "type": "pre-existing",
+      "name": "stm",
+      "version": "2.5.3.1",
+      "qualified-names": [
+        "network:hsc2hs:exe.stm",
+        "stm"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "stm-2.5.3.1-4700",
+      "depends": [
+        "12",
+        "4"
+      ]
+    },
+    "14": {
+      "type": "pre-existing",
+      "name": "exceptions",
+      "version": "0.10.9",
+      "qualified-names": [
+        "exceptions",
+        "network:hsc2hs:exe.exceptions"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "exceptions-0.10.9-a315",
+      "depends": [
+        "4",
+        "11",
+        "13",
+        "8",
+        "10"
+      ]
+    },
+    "15": {
+      "type": "pre-existing",
+      "name": "os-string",
+      "version": "2.0.7",
+      "qualified-names": [
+        "network:hsc2hs:exe.os-string",
+        "os-string"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "os-string-2.0.7-6e72",
+      "depends": [
+        "4",
+        "9",
+        "5",
+        "14",
+        "8"
+      ]
+    },
+    "16": {
+      "type": "pre-existing",
+      "name": "filepath",
+      "version": "1.5.4.0",
+      "qualified-names": [
+        "filepath",
+        "network:hsc2hs:exe.filepath"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "filepath-1.5.4.0-04d4",
+      "depends": [
+        "4",
+        "9",
+        "5",
+        "14",
+        "15",
+        "8"
+      ]
+    },
+    "17": {
+      "type": "pre-existing",
+      "name": "time",
+      "version": "1.14",
+      "qualified-names": [
+        "network:hsc2hs:exe.time",
+        "time"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "time-1.14-0c3b",
+      "depends": [
+        "4",
+        "5",
+        "8"
+      ]
+    },
+    "18": {
+      "type": "pre-existing",
+      "name": "unix",
+      "version": "2.8.6.0",
+      "qualified-names": [
+        "network:hsc2hs:exe.unix",
+        "unix"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "unix-2.8.6.0-402c",
+      "depends": [
+        "4",
+        "9",
+        "16",
+        "15",
+        "17"
+      ]
+    },
+    "19": {
+      "type": "pre-existing",
+      "name": "file-io",
+      "version": "0.1.5",
+      "qualified-names": [
+        "file-io",
+        "network:hsc2hs:exe.file-io"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "file-io-0.1.5-c59f",
+      "depends": [
+        "4",
+        "9",
+        "5",
+        "16",
+        "15",
+        "18"
+      ]
+    },
+    "20": {
+      "type": "pre-existing",
+      "name": "directory",
+      "version": "1.3.9.0",
+      "qualified-names": [
+        "directory",
+        "network:hsc2hs:exe.directory"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "directory-1.3.9.0-cbf1",
+      "depends": [
+        "4",
+        "19",
+        "16",
+        "15",
+        "17",
+        "18"
+      ]
+    },
+    "21": {
+      "type": "pre-existing",
+      "name": "containers",
+      "version": "0.7",
+      "qualified-names": [
+        "network:hsc2hs:exe.containers"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "containers-0.7-40d4",
+      "depends": [
+        "12",
+        "4",
+        "5",
+        "8"
+      ]
+    },
+    "22": {
+      "type": "pre-existing",
+      "name": "process",
+      "version": "1.6.25.0",
+      "qualified-names": [
+        "network:hsc2hs:exe.process"
+      ],
+      "component": "lib",
+      "db": "tests/package-db/ghc-9.12.2-x86_64-linux",
+      "unit-id": "process-1.6.25.0-3594",
+      "depends": [
+        "4",
+        "5",
+        "20",
+        "16",
+        "18"
+      ]
+    },
+    "23": {
+      "type": "configured",
+      "package": "hsc2hs-0.68.10",
+      "build-style": "per-component",
+      "qualified-names": [
+        "network:hsc2hs:exe.hsc2hs"
+      ],
+      "component": "exe:hsc2hs",
+      "flags": {
+        "in-ghc-tree": false
+      },
+      "depends": [
+        "4",
+        "21",
+        "20",
+        "16",
+        "22"
+      ],
+      "exe-depends": [],
+      "setup-depends": []
+    },
+    "24": {
+      "type": "configured",
+      "package": "network-3.2.8.0",
+      "build-style": "whole-package",
+      "qualified-names": [
+        "network"
+      ],
+      "components": [
+        "lib"
+      ],
+      "flags": {
+        "devel": false
+      },
+      "depends": [
+        "4",
+        "9",
+        "5",
+        "20",
+        "13"
+      ],
+      "exe-depends": [
+        "23"
+      ],
+      "setup-depends": []
+    }
+  }
+}

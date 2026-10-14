@@ -1,5 +1,10 @@
 name: CI
 
+# build compiles the executable once per target and GHC and uploads it as an
+# archive; test unpacks that archive on a separate runner, without a build
+# tree, and runs tests/run.sh on it; release attaches the tested archives to
+# the release that release-please cuts. Nothing is rebuilt after testing.
+
 on:
   workflow_dispatch:
   pull_request:
@@ -8,34 +13,242 @@ on:
     branches:
       - main
 
-jobs:
-  build-test:
-    name: Build and test
+permissions:
+  contents: read
 
-    runs-on: [runs-on, runner=2cpu-linux-x64, "run-id=${{ github.run_id }}"]
+env:
+  CABAL_VERSION: 3.18.1.0
+  # Release archives come from the builds with this GHC.
+  RELEASE_GHC: 9.14.1
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}, GHC ${{ matrix.ghc }}
+    runs-on: ${{ matrix.build-runner }}
 
     strategy:
       fail-fast: false
       matrix:
-        ghc-version:
+        ghc:
           - 9.12.2
           - 9.14.1
-        cabal-version:
-          - 3.18.1.0
+        target:
+          - x86_64-linux
+          - aarch64-linux
+          - x86_64-macos
+          - aarch64-macos
+          - x86_64-windows
+        include: &targets
+          # Linux builds run on the oldest runner, as the binaries need a
+          # glibc at least as new as the one they were built with.
+          - target: x86_64-linux
+            build-runner: ubuntu-22.04
+            test-runner: ubuntu-latest
+          - target: aarch64-linux
+            build-runner: ubuntu-22.04-arm
+            test-runner: ubuntu-24.04-arm
+          - target: x86_64-macos
+            build-runner: macos-15-intel
+            test-runner: macos-15-intel
+          - target: aarch64-macos
+            build-runner: macos-15
+            test-runner: macos-latest
+          - target: x86_64-windows
+            build-runner: windows-2025
+            test-runner: windows-latest
+
+    defaults:
+      run:
+        shell: bash
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: haskell-actions/setup@v2
+        id: setup
         with:
-          ghc-version: ${{ matrix.ghc-version }}
-          cabal-version: ${{ matrix.cabal-version }}
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: ${{ env.CABAL_VERSION }}
+
+      - name: Plan
+        run: cabal build --dry-run
+
+      - name: Restore cabal store
+        uses: actions/cache/restore@v6
+        id: cache
+        with:
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: cabal-store-${{ matrix.target }}-ghc-${{ matrix.ghc }}-${{ hashFiles('dist-newstyle/cache/plan.json') }}
+          restore-keys: cabal-store-${{ matrix.target }}-ghc-${{ matrix.ghc }}-
 
       - name: Build dependencies
-        run: cabal build --only-dependencies all -j
+        run: cabal build --only-dependencies -j
 
-      - name: Build project
-        run: cabal build all -j
+      - name: Save cabal store
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
+      - name: Build
+        run: cabal build -j
+
+      - name: Package
+        id: package
+        run: |
+          version=$(sed -n 's/^version: *//p' cabal-solver-plan.cabal)
+          name=cabal-solver-plan-$version-${{ matrix.target }}
+          mkdir out
+          cp "$(cabal list-bin cabal-solver-plan)" out/
+          cd out
+          case "${{ matrix.target }}" in
+            *-linux)
+              strip cabal-solver-plan
+              # The binary must only need libraries that every distribution
+              # has, with a stable ABI.
+              readelf -d cabal-solver-plan | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p' > needed
+              cat needed
+              if grep -vxE 'libc\.so\.6|libm\.so\.6|libz\.so\.1|libgmp\.so\.10|ld-linux-.*\.so\.[0-9]+' needed; then
+                echo "::error::unexpected shared library dependencies (above)"
+                exit 1
+              fi
+              rm needed
+              tar -czf "../$name.tar.gz" cabal-solver-plan
+              ;;
+            *-macos)
+              strip cabal-solver-plan
+              # strip invalidates the linker's ad-hoc signature.
+              codesign --force --sign - cabal-solver-plan
+              # Only system libraries; e.g. no Homebrew gmp.
+              otool -L cabal-solver-plan | tail -n +2 | awk '{print $1}' > needed
+              cat needed
+              if grep -vE '^(/usr/lib/|/System/Library/)' needed; then
+                echo "::error::unexpected shared library dependencies (above)"
+                exit 1
+              fi
+              rm needed
+              tar -czf "../$name.tar.gz" cabal-solver-plan
+              ;;
+            *-windows)
+              7z a "../$name.zip" cabal-solver-plan.exe
+              ;;
+          esac
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}-ghc-${{ matrix.ghc }}
+          path: cabal-solver-plan-*-${{ matrix.target }}.*
+          if-no-files-found: error
+
+  test:
+    name: Test ${{ matrix.target }}, GHC ${{ matrix.ghc }}
+    needs: build
+    runs-on: ${{ matrix.test-runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        ghc:
+          - 9.12.2
+          - 9.14.1
+        target:
+          - x86_64-linux
+          - aarch64-linux
+          - x86_64-macos
+          - aarch64-macos
+          - x86_64-windows
+        include: *targets
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.target }}-ghc-${{ matrix.ghc }}
+          path: artifact
+
+      - name: Unpack
+        run: |
+          mkdir bin
+          case "${{ matrix.target }}" in
+            *-windows) 7z x -obin artifact/*.zip ;;
+            *) tar -xzf artifact/*.tar.gz -C bin ;;
+          esac
+          ls -l bin
+
+      # Only for the smoke test with --with-ghc.
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: ${{ env.CABAL_VERSION }}
+          cabal-update: false
+
+      # The golden tests only read the index up to a fixed index-state, so an
+      # old copy of it is as good as a new one.
+      - name: Cache Hackage index
+        uses: actions/cache@v6
+        with:
+          path: _cache
+          key: hackage-index-${{ runner.os }}
 
       - name: Test
-        run: cabal test all -j
+        run: sh tests/run.sh bin/cabal-solver-plan
+
+  release:
+    name: Release
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    concurrency:
+      group: release
+      cancel-in-progress: false
+
+    steps:
+      - uses: googleapis/release-please-action@v5
+
+      - uses: actions/checkout@v7
+
+      # Attach this run's archives to the release of this commit, if there is
+      # one. Checking the tag, rather than release-please's release_created
+      # output, means that a rerun uploads the archives again, and that a
+      # run for a later commit never uploads its archives to this release.
+      - name: Find release
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=v$(sed -n 's/^version: *//p' cabal-solver-plan.cabal)
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha 2>/dev/null)" = "$GITHUB_SHA" ]; then
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          else
+            echo "No release tag $tag on $GITHUB_SHA"
+          fi
+
+      - if: steps.find.outputs.tag
+        uses: actions/download-artifact@v8
+        with:
+          pattern: '*-ghc-${{ env.RELEASE_GHC }}'
+          path: dist
+          merge-multiple: true
+
+      - name: Upload release assets
+        if: steps.find.outputs.tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.find.outputs.tag }}
+        run: |
+          cd dist
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+          gh release upload "$TAG" ./* --clobber --repo "$GITHUB_REPOSITORY"

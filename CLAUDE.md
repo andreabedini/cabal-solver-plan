@@ -16,11 +16,24 @@ cabal run -w ghc-9.14.1 -- cabal-solver-plan --with-ghc ghc-9.14.1 mtl   # run (
 fourmolu -i app                                                    # format (config: fourmolu.yaml)
 ```
 
-There is no test suite. To check that a change works, run the README examples. Use `--use-global-packagedb` to load GHC's global package DB.
+`tests/run.sh BINARY` tests a built executable: `--version`, `--help`, a `--with-ghc` solve, and golden JSON plans for `network` and `shake` (`tests/golden/`). The golden solves use `--compiler-id ghc-9.12.2 --platform x86_64-linux` with the package db vendored in `tests/package-db/`, so they give the same plans on every OS. They download Hackage's index into `$CACHE_DIR` (default `_cache`) and read it up to `--index-state 2026-06-01T00:00:00Z`. `UPDATE_GOLDEN=1` rewrites the golden files. For anything else, run the README examples. Use `--use-global-packagedb` to load GHC's global package DB.
+
+```sh
+cabal build -w ghc-9.14.1 && tests/run.sh "$(cabal list-bin -w ghc-9.14.1 cabal-solver-plan)"
+```
 
 The acceptance check for the JSON plan is to compare it with cabal-install 3.14.2's plans for `network` and `shake`. These are embedded in `../timbuktu/examples/plan/{network,shake}/BUCK` and were made with GHC 9.12.2 and `--index-state 2026-06-01T00:00:00Z`. Compare by package, version, component, flags and dependency edges; configured units have no unit id by design. Run against a copy of the Hackage index (`--index <copy>/01-index.tar`), never the one in `~/.cache/cabal`.
 
-CI (`.github/workflows/ci.yml`) runs `cabal build all` and `cabal test all` with GHC 9.12.2 and 9.14.1, and cabal 3.18.1.0.
+CI (`.github/workflows/ci.yml`) has three stages. Released binaries must be exactly the tested ones, so nothing is rebuilt after `build`:
+- **build**: builds with GHC 9.12.2 and 9.14.1 (cabal 3.18.1.0) for x86_64/aarch64 Linux, x86_64/aarch64 macOS and x86_64 Windows, and uploads a stripped binary in an archive. Linux builds run on `ubuntu-22.04`, so the binaries need glibc ≥ 2.35. They link glibc, libgmp and zlib dynamically, deliberately not statically; the job fails on any other `NEEDED` library. macOS binaries may only link system libraries.
+- **test**: unpacks the archive on another runner (newer Linux) and runs `tests/run.sh` on it.
+- **release** (pushes to `main`): runs release-please. When the commit is a release, it attaches the GHC 9.14.1 archives and `SHA256SUMS` to the release.
+
+`cabal.project` pins `index-state`; bump it deliberately.
+
+### Commits and releases
+
+Commit messages follow Conventional Commits (`feat:`, `fix:`, `feat!:`, `docs:`, `ci:`, …). release-please uses them to pick the next version and write `CHANGELOG.md`. Versions are SemVer (`0.1.0`), not PVP. The `version:` field in the `.cabal` file sits between `x-release-please-start-version` / `x-release-please-end` comments, and release-please updates it in its release PR; don't edit it, `CHANGELOG.md` or `.release-please-manifest.json` by hand. Before 1.0, `feat:` bumps the minor version.
 
 The repo is a jj (Jujutsu) colocated repo, so use `jj`, not `git`, for VCS operations.
 

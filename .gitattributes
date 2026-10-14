@@ -1,0 +1,3 @@
+# Keep LF line endings on Windows checkouts too: tests/run.sh, the golden
+# plans and the version read from the .cabal file depend on it.
+* text=auto eol=lf
