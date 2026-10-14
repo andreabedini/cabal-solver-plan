@@ -39,6 +39,21 @@ check() {
     fi
 }
 
+# check_exit NAME CODE CMD...: check that CMD exits with CODE.
+check_exit() {
+    name=$1
+    code=$2
+    shift 2
+    actual=0
+    "$@" >"$tmp/$name.out" 2>"$tmp/$name.err" || actual=$?
+    if [ "$actual" -eq "$code" ]; then
+        pass "$name"
+    else
+        fail "$name (exit $actual, expected $code)"
+        tail -n 20 "$tmp/$name.err"
+    fi
+}
+
 version=$(sed -n 's/^version: *//p' cabal-solver-plan.cabal)
 if check version "$bin" --version; then
     if [ "$(tr -d '\r' <"$tmp/version.out")" != "cabal-solver-plan $version" ]; then
@@ -48,6 +63,11 @@ if check version "$bin" --version; then
 fi
 
 check help "$bin" --help || true
+
+# Usage errors exit with 2.
+check_exit no-arguments 2 "$bin"
+check_exit unknown-option 2 "$bin" --no-such-option mtl
+check_exit conflicting-options 2 "$bin" --compiler-id ghc-9.12.2 -w "$ghc" mtl
 
 check with-compiler "$bin" -w "$ghc" mtl || true
 
