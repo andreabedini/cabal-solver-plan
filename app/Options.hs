@@ -55,7 +55,11 @@ import Distribution.Verbosity qualified as Verbosity
 import Language.Haskell.Extension (Extension, Language)
 import Network.URI (URI (..), parseAbsoluteURI)
 import Options.Applicative
+import Options.Applicative.Help (Chunk (..), isEmpty, paragraph, stringChunk)
+import Options.Applicative.Help.Pretty (Doc, indent, pretty, vsep)
 import Paths_cabal_solver_plan (version)
+import System.Environment (getArgs)
+import System.Exit (ExitCode (..))
 
 -- | These are the options of the command line tool. They roughlty
 -- correspond to the inputs required by the solver but there are some
@@ -101,12 +105,72 @@ data Options = Options
     , compilerSource :: CompilerSource
     }
 
+-- | Parse the command line. Usage errors exit with 2.
 parseOptions :: IO Options
 parseOptions = do
-    result <- customExecParser parserPrefs opts
-    case result of
-        Right options -> return options
-        Left err -> handleParseResult (Failure (parserFailure parserPrefs opts (ErrorMsg err) []))
+    args <- getArgs
+    handleParseResult . usageErrors $ case execParserPure parserPrefs opts args of
+        Success (Left err) -> Failure (usageError err)
+        Success (Right options)
+            | null (targets options) && null (localPackages options) -> Failure noTarget
+            | otherwise -> Success options
+        Failure failure -> Failure failure
+        CompletionInvoked completion -> CompletionInvoked completion
+  where
+    usageError err = parserFailure parserPrefs opts (ErrorMsg err) []
+    -- Most likely the program was run without arguments: say what it does.
+    noTarget =
+        overHelp
+            ( \h ->
+                h
+                    { helpDescription = paragraph description
+                    , helpFooter = Chunk (Just (vsep [examples, mempty, pretty seeHelp]))
+                    }
+            )
+            (usageError "No TARGET given: name the packages to plan for, or give --local-package.")
+
+-- | Usage errors exit with 2, and point to --help.
+usageErrors :: ParserResult a -> ParserResult a
+usageErrors = \case
+    Failure (ParserFailure failure) -> Failure $ ParserFailure $ \progName ->
+        case failure progName of
+            (h, ExitFailure _, cols) ->
+                ( h{helpFooter = if isEmpty (helpFooter h) then stringChunk seeHelp else helpFooter h}
+                , ExitFailure 2
+                , cols
+                )
+            success -> success
+    other -> other
+
+overHelp :: (ParserHelp -> ParserHelp) -> ParserFailure ParserHelp -> ParserFailure ParserHelp
+overHelp f (ParserFailure failure) = ParserFailure $ \progName ->
+    let (h, code, cols) = failure progName in (f h, code, cols)
+
+seeHelp :: String
+seeHelp = "Run 'cabal-solver-plan --help' for all options."
+
+description :: String
+description = "Find a build plan for the TARGET packages. The solver trace goes to stderr, the plan to stdout."
+
+examples :: Doc
+examples =
+    vsep
+        [ pretty "Examples:"
+        , indent 2 $
+            vsep
+                [ example
+                    "Plan mtl, for the ghc on the PATH and the packages installed with it:"
+                    "cabal-solver-plan mtl"
+                , example
+                    "Download (or update) Hackage's index, and print a plan for aeson as JSON:"
+                    "cabal-solver-plan --repository hackage.haskell.org:https://hackage.haskell.org/ --json aeson"
+                , example
+                    "Plan for a GHC that is not installed, from an index file:"
+                    "cabal-solver-plan --compiler-id ghc-9.12.2 --platform aarch64-linux --package-db DIR --index 01-index.tar text"
+                ]
+        ]
+  where
+    example what cmd = vsep [pretty (what :: String), indent 2 (pretty (cmd :: String))]
 
 parserPrefs :: ParserPrefs
 parserPrefs = defaultPrefs
@@ -167,7 +231,7 @@ opts = info (s <**> helper <**> simpleVersioner ("cabal-solver-plan " ++ showVer
         mconcat
             [ fullDesc
             , header "cabal-solver-plan - run cabal-install's solver on inputs given on the command line"
-            , progDesc "Find a build plan for the TARGET packages. The solver trace goes to stderr, the plan to stdout."
+            , progDesc description
             , footer "See docs/plan-format.md for the --json output."
             ]
 
