@@ -30,6 +30,9 @@ CI (`.github/workflows/ci.yml`) has three stages. Released binaries must be exac
 - **build**: builds with GHC 9.12.2 and 9.14.1 (cabal 3.18.1.0) for x86_64/aarch64 Linux, x86_64/aarch64 macOS and x86_64 Windows, and uploads a stripped binary in an archive. Linux builds run on `ubuntu-22.04`, so the binaries need glibc ≥ 2.35. They link glibc, libgmp and zlib dynamically, deliberately not statically; the job fails on any other `NEEDED` library. macOS binaries may only link system libraries.
 - **test**: unpacks the archive on another runner (newer Linux) and runs `tests/run.sh` on it.
 - **release** (pushes to `main`): runs release-please. When the commit is a release, it attaches the GHC 9.14.1 archives and `SHA256SUMS` to the release.
+- **ci-result**: passes only if every build and test passed. It is the only check `main`'s ruleset requires, so the matrix can change without touching the ruleset.
+
+`main` is protected by a ruleset: no deletion or force push, changes only through PRs merged by rebase (linear history, no approvals needed), and `CI result` must pass. Repository admins can bypass it in PRs only, which is how release-please's PRs are merged: they are opened with `GITHUB_TOKEN`, so CI does not run on them. Tags `v*` cannot be moved or deleted.
 
 `cabal.project` pins `index-state`; bump it deliberately.
 
