@@ -199,6 +199,21 @@ jobs:
       - name: Test
         run: sh tests/run.sh bin/cabal-solver-plan
 
+  # The one check that branch protection requires: whatever the matrix
+  # becomes, it passes only if every build and test passed.
+  ci-result:
+    name: CI result
+    needs: [build, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check that every build and test passed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS"
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")'
+
   release:
     name: Release
     needs: test
