@@ -49,6 +49,7 @@ import Distribution.Types.Flag (FlagAssignment)
 import Distribution.Types.PackageVersionConstraint
 import Distribution.Verbosity qualified as Verbosity
 import Network.URI (URI (..), parseAbsoluteURI)
+import Colog.Core (Severity (..))
 import Options.Applicative
 import Paths_cabal_solver_plan (version)
 
@@ -90,6 +91,7 @@ data Options = Options
     , cacheDir :: FilePath
     , offline :: Bool
     , jsonOutput :: Bool
+    , logLevel :: Severity
     , targets :: [PackageVersionConstraint]
     }
 
@@ -139,6 +141,7 @@ opts = info (s <**> helper <**> simpleVersioner ("cabal-solver-plan " ++ showVer
             <*> strOption (long "cache-dir" <> value "_cache")
             <*> flag False True (long "offline" <> help "Do not update repositories; fail if a repository has not been downloaded.")
             <*> switch (long "json" <> help "Print the plan as JSON (see docs/plan-format.md).")
+            <*> logLevelParser
             <*> many (parsecArgument (metavar "TARGET"))
 
     mods =
@@ -402,17 +405,22 @@ solverConfigParser =
             )
         -- Skip goalOrder. It is a function
         <*> pure Nothing
-        <*> ( Verbosity.vLevel
-                <$> parsecOption
-                    ( long "verbosity"
-                        <> value Verbosity.normal
-                    )
-            )
+        -- At verbose, the explanation of a failure would repeat the whole
+        -- trace, which --verbose prints already.
+        <*> pure (Verbosity.vLevel Verbosity.normal)
         <*> ( PruneAfterFirstSuccess
                 <$> switch
                     ( long "prune-after-first-success"
                     )
             )
+
+-- | The least severe messages to print: -v adds the solver's trace, -q
+-- leaves out what is printed while working.
+logLevelParser :: Parser Severity
+logLevelParser =
+    flag' Debug (short 'v' <> long "verbose" <> help "Also print the solver's trace.")
+        <|> flag' Warning (short 'q' <> long "quiet" <> help "Print only warnings and errors.")
+        <|> pure Info
 
 flagAssignmentParser :: Parser (Map PackageName FlagAssignment)
 flagAssignmentParser =
