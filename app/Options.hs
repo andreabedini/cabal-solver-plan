@@ -11,6 +11,7 @@ where
 
 import Colog.Core (Severity (..))
 import Data.List (intercalate)
+import Data.List.NonEmpty qualified as NE
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (fromMaybe, isJust)
@@ -220,7 +221,7 @@ opts = info (s <**> helper <**> simpleVersioner ("cabal-solver-plan " ++ showVer
             <*> pure [] -- TODO: solverSettingPreferences
             <*> flagAssignmentParser
             <*> solverConfigParser
-            <*> (PreferOldest <$> switch (long "prefer-oldest"))
+            <*> (PreferOldest <$> switchPair "prefer-oldest" False "Prefer the oldest versions of packages rather than the latest, e.g. to test lower bounds.")
             <*> strOption (long "cache-dir" <> value "_cache")
             <*> flag False True (long "offline" <> help "Do not update repositories; fail if a repository has not been downloaded.")
             <*> switch (long "json" <> help "Print the plan as JSON (see docs/plan-format.md).")
@@ -446,80 +447,52 @@ solverConfigParser :: Parser SolverConfig
 solverConfigParser =
     SolverConfig
         <$> ( ReorderGoals
-                <$> option
-                    auto
-                    ( long "reorder-goals"
-                        <> help "Try to reorder goals according to certain heuristics. Slows things down on average, but may make backtracking faster for some packages."
-                        <> value False
-                        <> showDefault
-                    )
+                <$> switchPair
+                    "reorder-goals"
+                    False
+                    "Try to reorder goals according to certain heuristics. Slows things down on average, but may make backtracking faster for some packages."
             )
         <*> ( CountConflicts
-                <$> option
-                    auto
-                    ( long "no-count-conflicts"
-                        <> help "Try to speed up solving by preferring goals that are involved in a lot of conflicts."
-                        <> value True
-                        <> showDefault
-                    )
+                <$> switchPair
+                    "count-conflicts"
+                    True
+                    "Try to speed up solving by preferring goals that are involved in a lot of conflicts."
             )
         <*> ( FineGrainedConflicts
-                <$> option
-                    auto
-                    ( long "no-fine-grained-conflicts"
-                        <> help "Skip a version of a package if it does not resolve the conflicts encountered in the last version, as a solver optimization."
-                        <> value True
-                        <> showDefault
-                    )
+                <$> switchPair
+                    "fine-grained-conflicts"
+                    True
+                    "Skip a version of a package if it does not resolve the conflicts encountered in the last version, as a solver optimization."
             )
         <*> ( MinimizeConflictSet
-                <$> option
-                    auto
-                    ( long "minimize-conflict-set"
-                        <> help
-                            ( "When there is no solution, try to improve the error message by finding "
-                                ++ "a minimal conflict set (default: false). May increase run time "
-                                ++ "significantly."
-                            )
-                        <> value False
-                        <> showDefault
-                    )
+                <$> switchPair
+                    "minimize-conflict-set"
+                    False
+                    "When there is no solution, try to improve the error message by finding a minimal conflict set. May increase run time significantly."
             )
         <*> ( IndependentGoals
-                <$> option
-                    auto
-                    ( long "independent-goals"
-                        <> help "Treat several goals on the command line as independent. If several goals depend on the same package, different versions can be chosen."
-                        <> value False
-                        <> showDefault
-                    )
+                <$> switchPair
+                    "independent-goals"
+                    False
+                    "Treat several goals on the command line as independent. If several goals depend on the same package, different versions can be chosen."
             )
         <*> ( AvoidReinstalls
-                <$> option
-                    auto
-                    ( long "avoid-reinstalls"
-                        <> help "Do not select versions that would destructively overwrite installed packages."
-                        <> value False
-                        <> showDefault
-                    )
+                <$> switchPair
+                    "avoid-reinstalls"
+                    False
+                    "Do not select versions that would destructively overwrite installed packages."
             )
         <*> ( ShadowPkgs
-                <$> option
-                    auto
-                    ( long "shadow-pkgs"
-                        <> help "If multiple package instances of the same version are installed, treat all but one as shadowed."
-                        <> value False
-                        <> showDefault
-                    )
+                <$> switchPair
+                    "shadow-installed-packages"
+                    False
+                    "If multiple package instances of the same version are installed, treat all but one as shadowed."
             )
         <*> ( StrongFlags
-                <$> option
-                    auto
-                    ( long "strong-flags"
-                        <> help "Do not defer flag choices (this used to be the default in cabal-install <= 1.20)."
-                        <> value False
-                        <> showDefault
-                    )
+                <$> switchPair
+                    "strong-flags"
+                    False
+                    "Do not defer flag choices (this used to be the default in cabal-install <= 1.20)."
             )
         <*> flag
             OnlyConstrainedNone
@@ -531,40 +504,41 @@ solverConfigParser =
                 <$> option
                     auto
                     ( long "max-backjumps"
+                        <> metavar "N"
                         <> help "Maximum number of backjumps allowed while solving. Use a negative number to enable unlimited backtracking. Use 0 to disable backtracking completely."
                         <> value defaultMaxBackjumps
                         <> showDefault
                     )
             )
-        <*> ( EnableBackjumping
-                <$> option
-                    auto
-                    ( long "enable-backjumping"
-                        <> value True
-                        <> showDefault
-                        -- I am not sure this makes sense so I'll hide this option
-                        <> internal
-                    )
-            )
+        -- As in cabal-install, backjumping is always on.
+        <*> pure (EnableBackjumping True)
         <*> ( SolveExecutables
-                <$> option
-                    auto
-                    ( long "solve-executables"
-                        <> help "Whether or not to solve for dependencies on executables."
-                        <> value True
-                        <> showDefault
-                    )
+                <$> switchPair
+                    "solve-executables"
+                    True
+                    "Solve for the executables that packages need to build (build-tool-depends)."
             )
         -- Skip goalOrder. It is a function
         <*> pure Nothing
         -- At verbose, the explanation of a failure would repeat the whole
         -- trace, which --verbose prints already.
         <*> pure (Verbosity.vLevel Verbosity.normal)
-        <*> ( PruneAfterFirstSuccess
-                <$> switch
-                    ( long "prune-after-first-success"
-                    )
+        -- cabal-install sets it only to find a minimal conflict set.
+        <*> pure (PruneAfterFirstSuccess False)
+
+-- | A setting that --NAME turns on and --no-NAME turns off; the last one
+-- given wins. Only --NAME is listed in the help.
+switchPair :: String -> Bool -> String -> Parser Bool
+switchPair name def doc =
+    maybe def NE.last . NE.nonEmpty
+        <$> many
+            ( flag' True (long name <> help (doc ++ defaultText))
+                <|> flag' False (long ("no-" ++ name) <> internal)
             )
+  where
+    defaultText
+        | def = " On by default; turn it off with --no-" ++ name ++ "."
+        | otherwise = " Off by default."
 
 -- | The least severe messages to print: -v adds the solver's trace, -q
 -- leaves out what is printed while working.
