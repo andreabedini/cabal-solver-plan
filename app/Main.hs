@@ -1,7 +1,9 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
+import Control.Exception (SomeAsyncException, SomeException, catch, displayException, fromException, throwIO)
 import Control.Monad (unless)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
@@ -10,7 +12,7 @@ import Data.List (dropWhileEnd, intercalate)
 import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as Map
 import Data.Containers.ListUtils (nubOrd)
-import Data.Maybe (fromMaybe, isNothing)
+import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing)
 import Data.Set qualified as Set
 import Data.Traversable (for)
 import Distribution.Client.Dependency (PackageProperty (..))
@@ -32,7 +34,9 @@ import Distribution.Simple (CompilerInfo, PackageDBX (..), compilerInfo)
 import Distribution.Simple.GHC qualified as GHC
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import Distribution.Simple.PackageIndex qualified as Cabal.Index
+import Distribution.Simple.Errors (exceptionMessage)
 import Distribution.Simple.Program.Db (defaultProgramDb)
+import Distribution.Simple.Utils (VerboseException (..))
 import Distribution.Solver.Modular.Configured (CP (..))
 import Distribution.Solver.Modular.Message (renderSummarizedMessage)
 import Distribution.Solver.Modular.Package (I (..), Loc (..), PI (..), showPI)
@@ -57,21 +61,57 @@ import Options
 import Plan (PackageSource (..), PlanInputs (..), makePlan, renderPlanJson, unsupportedUnits)
 import SetupDeps (applyDefaultSetupDeps)
 import SolverInterface (solve)
-import System.Directory (XdgDirectory (..), createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getXdgDirectory, listDirectory)
-import System.Exit (exitFailure)
-import System.FilePath (takeDirectory, takeExtension, (</>))
-import System.IO (hPutStrLn, stderr)
+import System.Directory (XdgDirectory (..), createDirectoryIfMissing, doesDirectoryExist, doesFileExist, doesPathExist, exeExtension, findExecutable, getXdgDirectory, listDirectory)
+import System.Exit (ExitCode (..), exitFailure, exitWith)
+import System.FilePath (isPathSeparator, takeDirectory, takeExtension, (<.>), (</>))
+import System.IO.Error (ioeGetErrorString, isUserError)
 import Prelude hiding (pi)
 
+-- | Exit codes: 0 a plan was found, 1 no plan was found, 2 usage error
+-- (see "Options"), 3 any other error.
 main :: IO ()
 main = do
-    Options{..} <- parseOptions
-
+    options <- parseOptions
     -- Everything but the plan goes to stderr.
-    let logger = stderrLogger logLevel
-        verbosity = cabalVerbosity logLevel
+    let logger = stderrLogger (logLevel options)
+    run logger options `catch` reportError logger
+
+-- | Report an error that stops the program, for a human: no exception
+-- types or backtraces.
+reportError :: Logger -> SomeException -> IO ()
+reportError logger e
+    | isExit e = throwIO e
+    | otherwise = do
+        logger <& Fatal (errorMessage e)
+        exitWith (ExitFailure 3)
+
+-- | Say what was being done when an error happened.
+inContext :: String -> IO a -> IO a
+inContext context action =
+    action `catch` \e ->
+        if isExit e then throwIO e else fail (context ++ ": " ++ errorMessage e)
+
+-- | An exit or an interrupt, rather than an error.
+isExit :: SomeException -> Bool
+isExit e =
+    isJust (fromException e :: Maybe ExitCode)
+        || isJust (fromException e :: Maybe SomeAsyncException)
+
+errorMessage :: SomeException -> String
+errorMessage e = dropWhileEnd (== '\n') $ case () of
+    _
+        | Just ioe <- fromException e, isUserError ioe -> ioeGetErrorString ioe
+        | Just (VerboseException _ _ _ cabalError) <- fromException e -> exceptionMessage cabalError
+        | otherwise -> displayException e
+
+run :: Logger -> Options -> IO ()
+run logger Options{..} = do
+    let verbosity = cabalVerbosity logLevel
 
     for_ deprecations ((logger <&) . Deprecated)
+
+    -- Check what can be checked before doing any slow work.
+    checkInputs compilerSource extraPackageDbs indexTar localPackages
 
     -- Here we interpret the user input w.r.t to the compiler, platform and
     -- package databases. While it is possible to specify these pieces
@@ -117,7 +157,9 @@ main = do
                 ]
         for (fromIndex ++ fromRepositories) $ \repo -> do
             logger <& ReadingIndex (repositoryName repo) (repositoryIndexTar repo)
-            index <- readIndex repo (indexStateOf repo mTotalIndexState)
+            index <-
+                inContext ("cannot read the index " ++ repositoryIndexTar repo) $
+                    readIndex repo (indexStateOf repo mTotalIndexState)
             logger
                 <& IndexRead
                     (repositoryName repo)
@@ -178,7 +220,17 @@ main = do
 
     case result of
         Left failure -> do
-            logger <& NoPlan (dropWhile (== '\n') (dropWhileEnd (== '\n') failure)) []
+            let hints =
+                    [ "No package index was given, so only installed packages can be used: add --repository or --index."
+                    | null indexes
+                    ]
+                        ++ [ "No packages are installed, so even base would have to be built from source: "
+                            ++ case compilerSource of
+                                CompilerInline{} -> "give the compiler's package db with --package-db."
+                                CompilerFromSystem{} -> "leave out --no-global-package-db, or give --package-db."
+                           | null (Cabal.Index.allPackages installedPkgIndex) && null extraPreInstalled
+                           ]
+            logger <& NoPlan (dropWhile (== '\n') (dropWhileEnd (== '\n') failure)) hints
             exitFailure
         Right cps
             | jsonOutput -> do
@@ -232,6 +284,44 @@ main = do
                                             ++ intercalate ", " (foldMap (map showPI . snd) g)
                                     )
                                     (NE.groupWith fst $ ComponentDeps.toList componentDeps)
+
+-- | Check that the inputs exist, before the slow work starts.
+checkInputs :: CompilerSource -> [FilePath] -> Maybe FilePath -> [FilePath] -> IO ()
+checkInputs compilerSource packageDbs indexTar localPackages = do
+    problems <-
+        catMaybes
+            <$> sequence
+                ( [ compilerProblem hcPath
+                  | CompilerFromSystem hcPath _ <- [compilerSource]
+                  ]
+                    ++ [ problemUnless doesDirectoryExist ("--package-db " ++ path ++ ": no such directory") path
+                       | path <- packageDbs
+                       ]
+                    ++ [ problemUnless doesFileExist ("--index " ++ path ++ ": no such file") path
+                       | Just path <- [indexTar]
+                       ]
+                    ++ [ problemUnless doesPathExist ("--local-package " ++ path ++ ": no such file or directory") path
+                       | path <- localPackages
+                       ]
+                )
+    case problems of
+        [] -> return ()
+        [problem] -> fail problem
+        _ -> fail (intercalate "\n" ("cannot read the inputs:" : map ("  " ++) problems))
+  where
+    problemUnless exists problem path = do
+        ok <- exists path
+        return (if ok then Nothing else Just problem)
+    compilerProblem hcPath
+        | any isPathSeparator hcPath = do
+            ok <- or <$> traverse doesFileExist [hcPath, hcPath <.> exeExtension]
+            return $
+                if ok then Nothing else Just ("--with-compiler " ++ hcPath ++ ": no such file")
+        | otherwise = do
+            found <- findExecutable hcPath
+            return $ case found of
+                Just _ -> Nothing
+                Nothing -> Just ("cannot find " ++ hcPath ++ " on the PATH: install GHC, or give its path with --with-compiler")
 
 determineCompiler ::
     Verbosity ->
@@ -298,11 +388,13 @@ loadRepositories logger verbosity repositories cacheDir offline = do
     for remoteRepos $ \RemoteRepo{..} -> do
         let path = cacheDir </> unRepoName remoteRepoName </> "01-index.tar"
         exists <- doesFileExist path
-        unless exists $ do
-            hPutStrLn stderr $
-                "No package index for repository " ++ unRepoName remoteRepoName ++ " at " ++ path
+        unless exists $
+            fail $
+                "no package index for repository "
+                    ++ unRepoName remoteRepoName
+                    ++ " at "
+                    ++ path
                     ++ if offline then " (run without --offline to download it)" else ""
-            exitFailure
         return
             Repository
                 { repositoryName = unRepoName remoteRepoName
@@ -359,7 +451,7 @@ readPackageDb logger path = do
             ( \filename -> do
                 content <- BS.readFile (path </> filename)
                 case parseInstalledPackageInfo content of
-                    Left e -> fail (unlines $ NE.toList e)
+                    Left e -> fail (unlines $ ("cannot parse " ++ path </> filename ++ ":") : NE.toList e)
                     Right (warnings, ipi) -> do
                         for_ warnings ((logger <&) . FileWarning (path </> filename))
                         return (ipi :: InstalledPackageInfo)
