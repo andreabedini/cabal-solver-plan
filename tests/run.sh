@@ -33,7 +33,9 @@ fail() {
     fi
     if [ "${GITHUB_ACTIONS:-}" = true ]; then
         details=$(if [ -n "${2:-}" ]; then tail -n 20 "$2"; fi | tr -d '\r' | sed 's/%/%25/g' | awk '{ printf "%s%%0A", $0 }')
-        printf '::error title=tests/run.sh %s::%s\n' "$1" "$details"
+        # In the title, a property value, "," and ":" have to be escaped too.
+        title=$(printf 'tests/run.sh %s' "$1" | sed 's/%/%25/g; s/,/%2C/g; s/:/%3A/g')
+        printf '::error title=%s::%s\n' "$title" "$details"
     fi
 }
 
@@ -76,6 +78,8 @@ check help "$bin" --help || true
 check_exit no-arguments 2 "$bin"
 check_exit unknown-option 2 "$bin" --no-such-option mtl
 check_exit conflicting-options 2 "$bin" --compiler-id ghc-9.12.2 -w "$ghc" mtl
+check_exit compiler-id-use-global-packagedb 2 "$bin" --compiler-id ghc-9.12.2 --use-global-packagedb mtl
+check_exit contradicting-global-package-db 2 "$bin" --use-global-packagedb --no-global-package-db mtl
 
 # No plan exits with 1, and other errors with 3, without an exception.
 check_exit no-plan 1 "$bin" -w "$ghc" no-such-package
