@@ -48,10 +48,10 @@ import Distribution.Types.PackageVersionConstraint (PackageVersionConstraint (..
 import Distribution.PackageDescription (GenericPackageDescription, package, packageDescription)
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescriptionMaybe)
 import Distribution.Verbosity (Verbosity)
-import Distribution.Verbosity qualified as Verbosity
 import Distribution.Version (isAnyVersion)
 import Hackage.Security.Client qualified as Sec
 import IndexTar (Index (..), Repository (..), indexSourcePackages, readIndex)
+import Log
 import Network.URI (URI (..), URIAuth (..))
 import Options
 import Plan (PackageSource (..), PlanInputs (..), makePlan, renderPlanJson, unsupportedUnits)
@@ -60,7 +60,7 @@ import SolverInterface (solve)
 import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, listDirectory)
 import System.Exit (exitFailure)
 import System.FilePath (takeDirectory, takeExtension, (</>))
-import System.IO (hPutStr, hPutStrLn, stderr)
+import System.IO (hPutStrLn, stderr)
 import Prelude hiding (pi)
 
 main :: IO ()
@@ -68,9 +68,8 @@ main = do
     Options{..} <- parseOptions
 
     -- Everything but the plan goes to stderr.
-    let verbosity =
-            Verbosity.setVerbosityHandles (Just stderr) $
-                Verbosity.mkVerbosity Verbosity.defaultVerbosityHandles Verbosity.normal
+    let logger = stderrLogger logLevel
+        verbosity = cabalVerbosity logLevel
 
     -- Here we interpret the user input w.r.t to the compiler, platform and
     -- package databases. While it is possible to specify these pieces
@@ -80,7 +79,7 @@ main = do
     (cinfo, platform@(Platform arch os), globalIPI) <-
         determineCompiler verbosity compilerSource
 
-    extraIPIs <- for extraPackageDbs $ \path -> (,) path <$> readPackageDb path
+    extraIPIs <- for extraPackageDbs $ \path -> (,) path <$> readPackageDb logger path
     let installedPkgIndex0 = globalIPI <> foldMap snd extraIPIs
         -- Which package db each installed unit comes from.
         installedDb =
@@ -104,7 +103,7 @@ main = do
                 pure cliPkgDb
 
     indexes <- do
-        fromRepositories <- loadRepositories verbosity repositories cacheDir offline
+        fromRepositories <- loadRepositories logger verbosity repositories cacheDir offline
         let fromIndex =
                 [ Repository
                     { repositoryName = maybe "index" uriRegName (uriAuthority indexUri)
@@ -114,10 +113,13 @@ main = do
                 | Just path <- [indexTar]
                 ]
         for (fromIndex ++ fromRepositories) $ \repo -> do
+            logger <& ReadingIndex (repositoryName repo) (repositoryIndexTar repo)
             index <- readIndex repo (indexStateOf repo mTotalIndexState)
-            hPutStrLn stderr $
-                "Index " ++ repositoryName repo ++ ": " ++ show (Map.size (indexPackages index)) ++ " package versions"
-                    ++ ", index-state " ++ Cabal.prettyShow (indexTimestamp index)
+            logger
+                <& IndexRead
+                    (repositoryName repo)
+                    (Map.size (indexPackages index))
+                    (Cabal.prettyShow (indexTimestamp index))
             return index
 
     locals <- traverse readLocalPackage localPackages
@@ -164,7 +166,7 @@ main = do
     result <-
         foldProgress
             -- step
-            (\step rest -> hPutStrLn stderr (renderSummarizedMessage step) >> rest)
+            (\step rest -> (logger <& SolverStep (renderSummarizedMessage step)) >> rest)
             -- fail
             (return . Left)
             -- done
@@ -173,7 +175,7 @@ main = do
 
     case result of
         Left failure -> do
-            hPutStrLn stderr (dropWhileEnd (== '\n') failure)
+            logger <& NoPlan (dropWhile (== '\n') (dropWhileEnd (== '\n') failure)) []
             exitFailure
         Right cps
             | jsonOutput -> do
@@ -182,10 +184,10 @@ main = do
                 case nubOrd [showPI pi | CP pi@(PI _ (I _ (Inst uid))) _ _ _ <- cps, isNothing (Cabal.Index.lookupUnitId installedPkgIndex uid)] of
                     [] -> return ()
                     pis -> do
-                        hPutStr stderr $
-                            unlines $
+                        logger
+                            <& PlanRefused
                                 "Cannot make a plan, it uses packages from --with-preinstalled, which --json does not support:"
-                                    : map ("  " ++) pis
+                                pis
                         exitFailure
                 plan <-
                     makePlan
@@ -202,10 +204,10 @@ main = do
                 case unsupportedUnits plan of
                     [] -> return ()
                     units -> do
-                        hPutStr stderr $
-                            unlines $
+                        logger
+                            <& PlanRefused
                                 "Cannot make a plan, Backpack is not supported:"
-                                    : ["  " ++ uid ++ ": " ++ reason | (uid, reason) <- units]
+                                [uid ++ ": " ++ reason | (uid, reason) <- units]
                         exitFailure
                 LBS.putStr $
                     renderPlanJson
@@ -264,12 +266,13 @@ indexStateOf repo = \case
 -- do not have to be remote but can also be local, use a URI with file:
 -- scheme.
 loadRepositories ::
+    Logger ->
     Verbosity ->
     [Either URI RemoteRepo] ->
     FilePath ->
     Bool ->
     IO [Repository]
-loadRepositories verbosity repositories cacheDir offline = do
+loadRepositories logger verbosity repositories cacheDir offline = do
     unless (offline || null remoteRepos) $ do
         -- Note: this is workaround for a bug in cabal-install where it
         -- tries to create hackage-security-lock in repoLocalDir, without
@@ -282,11 +285,10 @@ loadRepositories verbosity repositories cacheDir offline = do
                 for_ repoContextRepos $ \case
                     repo@RepoSecure{repoRemote} ->
                         repoContextWithSecureRepo repo $ \repoSecure -> do
-                            hPutStr stderr $ "Updating " ++ Cabal.prettyShow repoRemote ++ " ..."
+                            let name = unRepoName (remoteRepoName repoRemote)
+                            logger <& UpdatingRepository name (show (remoteRepoURI repoRemote))
                             updated <- Sec.uncheckClientErrors $ Sec.checkForUpdates repoSecure Nothing
-                            hPutStrLn stderr $ case updated of
-                                Sec.NoUpdates -> " no updates found."
-                                Sec.HasUpdates -> " updated."
+                            logger <& RepositoryUpdated name (case updated of Sec.HasUpdates -> True; Sec.NoUpdates -> False)
                     _otherwise ->
                         pure ()
 
@@ -343,8 +345,8 @@ readLocalPackage path = do
 -- | Read a packagedb. Cabal parses the output of ghc-pkg but we cannot
 -- assume we have access to ghc-pkg, so we read the files from a given
 -- directory. Note that the file format is still fixed by Cabal itself.
-readPackageDb :: FilePath -> IO InstalledPackageIndex
-readPackageDb path = do
+readPackageDb :: Logger -> FilePath -> IO InstalledPackageIndex
+readPackageDb logger path = do
     entriesFilename <-
         filter ((== ".conf") . takeExtension)
             <$> listDirectory path
@@ -356,6 +358,6 @@ readPackageDb path = do
                 case parseInstalledPackageInfo content of
                     Left e -> fail (unlines $ NE.toList e)
                     Right (warnings, ipi) -> do
-                        for_ warnings (hPutStrLn stderr)
+                        for_ warnings ((logger <&) . FileWarning (path </> filename))
                         return (ipi :: InstalledPackageInfo)
             )
