@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
+
 {- HLINT ignore "Functor law" -}
 
 module Options (
@@ -427,21 +428,24 @@ compilerOptionsParser =
         -- The old name of --with-compiler.
         <*> optional (strOption (long "with-ghc" <> metavar "PATH" <> internal))
         <*> switch
-            ( long "no-global-package-db" <> hidden
+            ( long "no-global-package-db"
+                <> hidden
                 <> help "Do not load the global package db of --with-compiler's GHC."
             )
         -- The global package db is loaded by default now.
         <*> switch (long "use-global-packagedb" <> internal)
         <*> optional
             ( parsecOption
-                ( long "compiler-id" <> hidden
+                ( long "compiler-id"
+                    <> hidden
                     <> metavar "COMPILER-ID"
                     <> help "Plan for this compiler, e.g. ghc-9.12.2, without running it. There are no installed packages unless given with --package-db."
                 )
             )
         <*> optional
             ( parsecOption
-                ( long "abi-tag" <> hidden
+                ( long "abi-tag"
+                    <> hidden
                     <> metavar "ABI-TAG"
                     <> help "With --compiler-id: the tag that tells apart incompatible ABIs on the same platform (default: none)."
                 )
@@ -449,7 +453,8 @@ compilerOptionsParser =
         <*> optional
             ( unCommaSeparated
                 <$> parsecOption
-                    ( long "compiler-id-compat" <> hidden
+                    ( long "compiler-id-compat"
+                        <> hidden
                         <> metavar "COMPILER-ID,..."
                         <> help "With --compiler-id: other compilers it is compatible with."
                     )
@@ -457,7 +462,8 @@ compilerOptionsParser =
         <*> optional
             ( unCommaSeparated
                 <$> parsecOption
-                    ( long "supported-language" <> hidden
+                    ( long "supported-language"
+                        <> hidden
                         <> metavar "LANGUAGE,..."
                         <> help "With --compiler-id: the language standards it supports (default: all)."
                     )
@@ -465,14 +471,16 @@ compilerOptionsParser =
         <*> optional
             ( unCommaSeparated
                 <$> parsecOption
-                    ( long "supported-extension" <> hidden
+                    ( long "supported-extension"
+                        <> hidden
                         <> metavar "EXTENSION,..."
                         <> help "With --compiler-id: the extensions it supports (default: all)."
                     )
             )
         <*> optional
             ( parsecOption
-                ( long "platform" <> hidden
+                ( long "platform"
+                    <> hidden
                     <> metavar "PLATFORM"
                     <> help ("With --compiler-id: the platform to plan for, e.g. aarch64-linux (default: " ++ Cabal.prettyShow buildPlatform ++ ").")
                 )
@@ -562,13 +570,15 @@ solverConfigParser =
         <*> flag
             OnlyConstrainedNone
             OnlyConstrainedAll
-            ( long "reject-unconstrained-dependencies" <> hidden
+            ( long "reject-unconstrained-dependencies"
+                <> hidden
                 <> help "Require all packages to have constraints on them if they are to be selected."
             )
         <*> ( (\case n | n < 0 -> Nothing; n -> Just n)
                 <$> option
                     auto
-                    ( long "max-backjumps" <> hidden
+                    ( long "max-backjumps"
+                        <> hidden
                         <> metavar "N"
                         <> help "Maximum number of backjumps allowed while solving. Use a negative number to enable unlimited backtracking. Use 0 to disable backtracking completely."
                         <> value defaultMaxBackjumps
