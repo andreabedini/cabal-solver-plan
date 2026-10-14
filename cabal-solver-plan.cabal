@@ -1,7 +1,7 @@
 cabal-version:   3.0
 name:            cabal-solver-plan
 -- x-release-please-start-version
-version:         0.0.0
+version:         0.1.0
 -- x-release-please-end
 synopsis:        Run cabal-install's solver with every input given on the command line
 category:        Distribution
