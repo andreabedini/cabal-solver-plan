@@ -96,7 +96,7 @@ data Options = Options
     , flagAssignments :: Map PackageName FlagAssignment
     , solverConfig :: SolverConfig
     , preferOldest :: PreferOldest
-    , cacheDir :: FilePath
+    , cacheDir :: Maybe FilePath
     , offline :: Bool
     , jsonOutput :: Bool
     , logLevel :: Severity
@@ -222,7 +222,13 @@ opts = info (s <**> helper <**> simpleVersioner ("cabal-solver-plan " ++ showVer
             <*> flagAssignmentParser
             <*> solverConfigParser
             <*> (PreferOldest <$> switchPair "prefer-oldest" False "Prefer the oldest versions of packages rather than the latest, e.g. to test lower bounds.")
-            <*> strOption (long "cache-dir" <> value "_cache")
+            <*> optional
+                ( strOption
+                    ( long "cache-dir"
+                        <> metavar "DIR"
+                        <> help "Where --repository keeps the repositories it downloads (default: cabal-solver-plan in the user's cache directory: $XDG_CACHE_HOME, ~/.cache, or %LOCALAPPDATA% on Windows)."
+                    )
+                )
             <*> flag False True (long "offline" <> help "Do not update repositories; fail if a repository has not been downloaded.")
             <*> switch (long "json" <> help "Print the plan as JSON (see docs/plan-format.md).")
             <*> logLevelParser
