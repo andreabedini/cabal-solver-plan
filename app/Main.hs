@@ -71,6 +71,8 @@ main = do
     let logger = stderrLogger logLevel
         verbosity = cabalVerbosity logLevel
 
+    for_ deprecations ((logger <&) . Deprecated)
+
     -- Here we interpret the user input w.r.t to the compiler, platform and
     -- package databases. While it is possible to specify these pieces
     -- idependently; they lose their independence if we let the user refer to

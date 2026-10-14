@@ -49,7 +49,10 @@ fi
 
 check help "$bin" --help || true
 
-check with-ghc "$bin" --with-ghc "$ghc" --use-global-packagedb mtl || true
+check with-compiler "$bin" -w "$ghc" mtl || true
+
+# The old names of -w and of the default --use-global-packagedb still work.
+check deprecated-options "$bin" --with-ghc "$ghc" --use-global-packagedb mtl || true
 
 for target in network shake; do
     check "solve-$target" "$bin" \
