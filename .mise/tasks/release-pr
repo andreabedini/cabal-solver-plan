@@ -1,0 +1,42 @@
+#!/usr/bin/env zsh
+#MISE description="Open a release PR: bump the .cabal version and regenerate CHANGELOG.md"
+setopt err_exit no_unset pipe_fail
+
+cabal=( *.cabal(N) )
+(( $#cabal == 1 )) || { print -u2 "error: expected exactly one .cabal file"; exit 1 }
+
+# git-cliff reads release tags from git. jj does not need them, so fetch them with git.
+git fetch --tags --quiet origin
+jj git fetch
+# Start a new change on top of main. In a colocated repo, git HEAD is now main@origin,
+# so git-cliff reads the history of main and not of the current work.
+jj new 'main@origin'
+
+# Commits that cliff.toml skips are not in the context.
+releasable=$(git cliff --unreleased --context | jq '(.[0].commits // []) | length')
+if (( releasable == 0 )); then
+  print "No releasable commits since the last release."
+  jj abandon @
+  exit 0
+fi
+
+# git-cliff bumps the last three components of the latest tag, or takes
+# [bump] initial_tag from cliff.toml if there is no tag yet.
+next=$(git cliff --bumped-version)
+next=${next#v}
+if [[ $next != <->.<->.<->.<-> ]]; then
+  print -u2 "error: next version $next is not A.B.C.D"
+  jj abandon @
+  exit 1
+fi
+
+sed -i -E "s/^(version:[[:space:]]+).*/\1$next/" $cabal[1]
+git cliff --tag "v$next" -o CHANGELOG.md
+
+jj describe -m "chore(release): $next"
+jj bookmark create "release-$next" -r @
+jj git push -b "release-$next"
+gh pr create --head "release-$next" --title "chore(release): $next" \
+  --body-file =(git cliff --unreleased --tag "v$next" --strip all)
+
+print "Release PR for $next is open."

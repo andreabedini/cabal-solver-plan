@@ -51,7 +51,47 @@ feat!: rename the "db" field of pre-existing units
 docs: explain --with-preinstalled
 ```
 
-Releases are automated with release-please. It uses the commit types to choose the next version and to write `CHANGELOG.md`: `fix:` makes a patch release, `feat:` a minor one, and `!` a major one (before 1.0, `feat:` and `!` both make a minor release). Other types, such as `docs:`, `ci:`, `test:`, `refactor:` and `chore:`, don't make a release on their own. Don't edit the version in `cabal-solver-plan.cabal` or `CHANGELOG.md` by hand.
+The allowed types are `feat`, `fix`, `perf`, `docs`, `ci`, `test`, `refactor`, `build`, `chore`, `style` and `revert`. A scope in parentheses is optional. `!` before the colon, or a `BREAKING CHANGE:` footer, marks a breaking change. The `commits` CI job checks every commit of a pull request with [git-cliff](https://git-cliff.org/), so the allowed types are the ones that the commit parsers in `cliff.toml` know. jj does not run git hooks, so this check is the only one.
+
+The commit types choose the next version:
+
+| Commits since the last release | Next version |
+|---|---|
+| At least one breaking change, of any type | `B` + 1 |
+| At least one `feat` | `C` + 1 |
+| At least one `fix` or `perf` | `D` + 1 |
+| Only `docs`, `ci`, `test`, `refactor`, `build`, `chore`, `style` | No release |
+
+Pull requests are merged with rebase merge. A squash merge would leave only the PR title for the release task to read.
+
+## Versions
+
+Versions follow the [Haskell PVP](https://pvp.haskell.org/) and have four components, `A.B.C.D`, for example `0.1.0.0`. `A.B` is the major version, `C` the minor version and `D` the patch version.
+
+- git-cliff calculates the next version from the commit types, as in the table above. This is SemVer applied to `B.C.D`. There is no special rule for versions below 1.0: a breaking change increments `B` even when it is `0`.
+- Incrementing a field sets all fields to its right to `0`.
+- `A` changes only by hand, when the maintainer decides that a release deserves a new number. Like a change of `B`, it makes a major release.
+- Release tags are `v` followed by the version, for example `v0.1.0.0`. The first release is `0.1.0.0`.
+
+The `version:` field in `cabal-solver-plan.cabal` is the only source of the version. Only the release task, and the maintainer in a release PR, change it and `CHANGELOG.md`.
+
+## Making a release
+
+The maintainer makes releases.
+
+1. Make sure that `main` is green.
+2. Run `mise run release-pr`. It reads the commits since the last release tag, sets the next version in `cabal-solver-plan.cabal`, regenerates `CHANGELOG.md` with [git-cliff](https://git-cliff.org/), and opens a pull request titled `chore(release): VERSION`. If there are no releasable commits, it says so and does nothing.
+3. Review the pull request. Edit `CHANGELOG.md` if necessary. To increment `A`, change the version by hand in the `.cabal` file, and change the `CHANGELOG.md` header and the commit description to the same version.
+4. When `ci-ok` passes, merge the pull request with rebase merge.
+5. CI's `release` job sees the release commit on `main`. It publishes a GitHub release with the archives that CI built and tested, the source distribution (`cabal sdist`) of every package in `cabal.project`, their `SHA256SUMS`, and the notes from `CHANGELOG.md`. Publishing creates the tag.
+6. Verify the release:
+
+   ```
+   gh release verify vVERSION
+   gh attestation verify ARCHIVE --repo andreabedini/cabal-solver-plan
+   ```
+
+Releases are immutable: a published version cannot change. If a release is wrong, fix it and make a new release. If the `release` job fails before it publishes, rerun the failed jobs; the job continues the draft release.
 
 ## Licence
 
