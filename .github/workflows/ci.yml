@@ -2,19 +2,26 @@ name: CI
 
 # build compiles the executable once per target and GHC and uploads it as an
 # archive; test unpacks that archive on a separate runner, without a build
-# tree, and runs tests/run.sh on it; release attaches the tested archives to
-# the release that release-please cuts. Nothing is rebuilt after testing.
+# tree, and runs tests/run.sh on it; sdist makes the source distribution of
+# every package in cabal.project; commits checks the commit messages of a
+# PR; ci-ok is the one check that the ruleset requires; release publishes the
+# tested archives and the source distributions when the head of main is a
+# release commit, made by `mise run release-pr`. Nothing is rebuilt after
+# testing.
 
 on:
   workflow_dispatch:
   pull_request:
-  merge_group:
   push:
     branches:
       - main
 
 permissions:
   contents: read
+
+defaults:
+  run:
+    shell: bash
 
 env:
   CABAL_VERSION: 3.18.1.0
@@ -26,7 +33,7 @@ jobs:
     name: Build ${{ matrix.target }}, GHC ${{ matrix.ghc }}
     runs-on: ${{ matrix.build-runner }}
 
-    strategy:
+    strategy: &strategy
       fail-fast: false
       matrix:
         ghc:
@@ -38,7 +45,7 @@ jobs:
           - x86_64-macos
           - aarch64-macos
           - x86_64-windows
-        include: &targets
+        include:
           # Linux builds run on the oldest runner, as the binaries need a
           # glibc at least as new as the one they were built with.
           - target: x86_64-linux
@@ -57,14 +64,10 @@ jobs:
             build-runner: windows-2025
             test-runner: windows-latest
 
-    defaults:
-      run:
-        shell: bash
-
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: haskell-actions/setup@v2
+      - uses: haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d # v2.12.1
         id: setup
         with:
           ghc-version: ${{ matrix.ghc }}
@@ -74,7 +77,7 @@ jobs:
         run: cabal build --dry-run
 
       - name: Restore cabal store
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: cache
         with:
           path: ${{ steps.setup.outputs.cabal-store }}
@@ -86,103 +89,95 @@ jobs:
 
       - name: Save cabal store
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.setup.outputs.cabal-store }}
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
       - name: Build
-        run: cabal build -j
-
-      - name: Package
-        id: package
         run: |
-          version=$(sed -n 's/^version: *//p' cabal-solver-plan.cabal)
-          name=cabal-solver-plan-$version-${{ matrix.target }}
+          cabal build -j
           mkdir out
           cp "$(cabal list-bin cabal-solver-plan)" out/
-          cd out
-          case "${{ matrix.target }}" in
-            *-linux)
-              strip cabal-solver-plan
-              # The binary must only need libraries that every distribution
-              # has, with a stable ABI.
-              readelf -d cabal-solver-plan | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p' > needed
-              cat needed
-              if grep -vxE 'libc\.so\.6|libm\.so\.6|libz\.so\.1|libgmp\.so\.10|ld-linux-.*\.so\.[0-9]+' needed; then
-                echo "::error::unexpected shared library dependencies (above)"
-                exit 1
-              fi
-              rm needed
-              tar -czf "../$name.tar.gz" cabal-solver-plan
-              ;;
-            *-macos)
-              strip cabal-solver-plan
-              # strip invalidates the linker's ad-hoc signature.
-              codesign --force --sign - cabal-solver-plan
-              # Only system libraries; e.g. no Homebrew gmp.
-              otool -L cabal-solver-plan | tail -n +2 | awk '{print $1}' > needed
-              cat needed
-              if grep -vE '^(/usr/lib/|/System/Library/)' needed; then
-                echo "::error::unexpected shared library dependencies (above)"
-                exit 1
-              fi
-              rm needed
-              tar -czf "../$name.tar.gz" cabal-solver-plan
-              ;;
-            *-windows)
-              7z a "../$name.zip" cabal-solver-plan.exe
-              ;;
-          esac
+          version=$(sed -n 's/^version: *//p' cabal-solver-plan.cabal)
+          echo "ARCHIVE=cabal-solver-plan-$version-${{ matrix.target }}" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@v7
+      - name: Strip
+        if: runner.os != 'Windows'
+        working-directory: out
+        run: strip cabal-solver-plan
+
+      # strip invalidates the linker's ad-hoc signature.
+      - name: Sign
+        if: runner.os == 'macOS'
+        working-directory: out
+        run: codesign --force --sign - cabal-solver-plan
+
+      # The binary must only need libraries that every distribution has, with
+      # a stable ABI.
+      - name: Check shared libraries
+        if: runner.os == 'Linux'
+        working-directory: out
+        run: |
+          needed=$(readelf -d cabal-solver-plan | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
+          echo "$needed"
+          if grep -vxE 'libc\.so\.6|libm\.so\.6|libz\.so\.1|libgmp\.so\.10|ld-linux-.*\.so\.[0-9]+' <<< "$needed"; then
+            echo "::error::unexpected shared library dependencies (above)"
+            exit 1
+          fi
+
+      # Only system libraries; e.g. no Homebrew gmp.
+      - name: Check shared libraries
+        if: runner.os == 'macOS'
+        working-directory: out
+        run: |
+          needed=$(otool -L cabal-solver-plan | tail -n +2 | awk '{print $1}')
+          echo "$needed"
+          if grep -vE '^(/usr/lib/|/System/Library/)' <<< "$needed"; then
+            echo "::error::unexpected shared library dependencies (above)"
+            exit 1
+          fi
+
+      - name: Archive
+        if: runner.os != 'Windows'
+        working-directory: out
+        run: tar -czf "../$ARCHIVE.tar.gz" cabal-solver-plan
+
+      - name: Archive
+        if: runner.os == 'Windows'
+        working-directory: out
+        run: 7z a "../$ARCHIVE.zip" cabal-solver-plan.exe
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.target }}-ghc-${{ matrix.ghc }}
-          path: cabal-solver-plan-*-${{ matrix.target }}.*
+          path: ${{ env.ARCHIVE }}.*
           if-no-files-found: error
 
   test:
     name: Test ${{ matrix.target }}, GHC ${{ matrix.ghc }}
     needs: build
     runs-on: ${{ matrix.test-runner }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        ghc:
-          - 9.12.2
-          - 9.14.1
-        target:
-          - x86_64-linux
-          - aarch64-linux
-          - x86_64-macos
-          - aarch64-macos
-          - x86_64-windows
-        include: *targets
-
-    defaults:
-      run:
-        shell: bash
+    strategy: *strategy
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ matrix.target }}-ghc-${{ matrix.ghc }}
           path: artifact
 
       - name: Unpack
-        run: |
-          mkdir bin
-          case "${{ matrix.target }}" in
-            *-windows) 7z x -obin artifact/*.zip ;;
-            *) tar -xzf artifact/*.tar.gz -C bin ;;
-          esac
-          ls -l bin
+        if: runner.os != 'Windows'
+        run: mkdir bin && tar -xzf artifact/*.tar.gz -C bin
+
+      - name: Unpack
+        if: runner.os == 'Windows'
+        run: 7z x -obin artifact/*.zip
 
       # Only for the smoke test with --with-ghc.
-      - uses: haskell-actions/setup@v2
+      - uses: haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d # v2.12.1
         with:
           ghc-version: ${{ matrix.ghc }}
           cabal-version: ${{ env.CABAL_VERSION }}
@@ -191,7 +186,7 @@ jobs:
       # The golden tests only read the index up to a fixed index-state, so an
       # old copy of it is as good as a new one.
       - name: Cache Hackage index
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: _cache
           key: hackage-index-${{ runner.os }}
@@ -199,71 +194,162 @@ jobs:
       - name: Test
         run: sh tests/run.sh bin/cabal-solver-plan
 
-  # The one check that branch protection requires: whatever the matrix
-  # becomes, it passes only if every build and test passed.
-  ci-result:
-    name: CI result
-    needs: [build, test]
-    if: always()
+  # The source distributions of every package in cabal.project, as cabal
+  # sdist makes them: only the files that the .cabal files list, unlike a
+  # checkout of the repository. cabal sdist needs no GHC and its tarballs
+  # are reproducible.
+  sdist:
+    name: sdist
     runs-on: ubuntu-latest
     steps:
-      - name: Check that every build and test passed
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-        run: |
-          echo "$RESULTS"
-          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-  release:
-    name: Release
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - uses: haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d # v2.12.1
+        with:
+          ghc-version: ${{ env.RELEASE_GHC }}
+          cabal-version: ${{ env.CABAL_VERSION }}
+          cabal-update: false
+
+      - name: Make source distributions
+        run: cabal sdist all -o sdist
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sdist
+          path: sdist/*.tar.gz
+          if-no-files-found: error
+
+  # Every commit of a PR must follow Conventional Commits, with a type that a
+  # commit parser in cliff.toml knows: the release task reads them to choose
+  # the next version and to write CHANGELOG.md. git-cliff checks the PR's
+  # commits with cliff.toml, without the filters that drop unconventional and
+  # unmatched commits from the changelog, and fails on either kind.
+  commits:
+    name: commits
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Check Conventional Commits
+        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
+        with:
+          # The same version as in mise.toml.
+          version: v2.14.2
+          args: --verbose origin/${{ github.base_ref }}..${{ github.event.pull_request.head.sha }}
+        env:
+          GIT_CLIFF__GIT__FILTER_UNCONVENTIONAL: "false"
+          GIT_CLIFF__GIT__FILTER_COMMITS: "false"
+          GIT_CLIFF__GIT__REQUIRE_CONVENTIONAL: "true"
+          GIT_CLIFF__GIT__FAIL_ON_UNMATCHED_COMMIT: "true"
 
+  # The one check that the ruleset requires: whatever the matrix becomes, it
+  # fails if any job it needs failed or was cancelled. Without always(), a
+  # failed job would make it skipped, and GitHub treats a skipped required
+  # check as passed. commits is skipped on pushes to main, which is fine.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [build, test, sdist, commits]
+    runs-on: ubuntu-latest
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+
+  # Publishes a release when the head of main is a release commit
+  # ("chore(release): VERSION"). It is idempotent: a rerun continues a draft,
+  # or does nothing if the release is published.
+  release:
+    name: release
+    needs: ci-ok
+    # The implicit success() would also look at commits, which is skipped on
+    # pushes, and so skip this job too. Check ci-ok's result instead.
+    if: >-
+      !cancelled() && needs.ci-ok.result == 'success'
+      && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && startsWith(github.event.head_commit.message, 'chore(release): ')
+    runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
-      issues: write
-      pull-requests: write
-
+      id-token: write
+      attestations: write
     concurrency:
       group: release
       cancel-in-progress: false
-
     steps:
-      - uses: googleapis/release-please-action@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/checkout@v7
-
-      # Attach this run's archives to the release of this commit, if there is
-      # one. Checking the tag, rather than release-please's release_created
-      # output, means that a rerun uploads the archives again, and that a
-      # run for a later commit never uploads its archives to this release.
-      - name: Find release
-        id: find
+      - name: Plan
+        id: plan
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag=v$(sed -n 's/^version: *//p' cabal-solver-plan.cabal)
-          if [ "$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha 2>/dev/null)" = "$GITHUB_SHA" ]; then
-            echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          else
-            echo "No release tag $tag on $GITHUB_SHA"
+          version=$(sed -nE 's/^version:[[:space:]]+//p' ./*.cabal)
+          subject=$(git log -1 --format=%s)
+          # A squash merge appends " (#123)" to the subject.
+          if [[ $subject != "chore(release): $version" && $subject != "chore(release): $version (#"*")" ]]; then
+            echo "::error::The release commit \"$subject\" does not match version $version in the .cabal file"
+            exit 1
           fi
+          state=$(gh release view "v$version" --json isDraft \
+                    --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null || echo none)
+          echo "v$version: $state"
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+            echo "state=$state"
+          } >> "$GITHUB_OUTPUT"
 
-      - if: steps.find.outputs.tag
-        uses: actions/download-artifact@v8
+      - name: Download release archives
+        if: steps.plan.outputs.state != 'published'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: '*-ghc-${{ env.RELEASE_GHC }}'
           path: dist
           merge-multiple: true
 
-      - name: Upload release assets
-        if: steps.find.outputs.tag
+      - name: Download source distributions
+        if: steps.plan.outputs.state != 'published'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sdist
+          path: dist
+
+      - name: Make checksums and release notes
+        if: steps.plan.outputs.state != 'published'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          (cd dist && sha256sum -- * > SHA256SUMS)
+          cat dist/SHA256SUMS
+          awk -v v="$VERSION" '/^## /{p = index($0, "[" v "]") > 0; next} p' CHANGELOG.md > NOTES.md
+          if [ ! -s NOTES.md ]; then
+            echo "::error::CHANGELOG.md has no section for $VERSION"
+            exit 1
+          fi
+
+      - name: Attest build provenance
+        if: steps.plan.outputs.state != 'published'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: 'dist/*'
+
+      - name: Create the draft release
+        if: steps.plan.outputs.state == 'none'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.find.outputs.tag }}
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "$TAG" --notes-file NOTES.md
+
+      - name: Upload and publish
+        if: steps.plan.outputs.state != 'published'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.tag }}
         run: |
-          cd dist
-          sha256sum -- * > SHA256SUMS
-          cat SHA256SUMS
-          gh release upload "$TAG" ./* --clobber --repo "$GITHUB_REPOSITORY"
+          # The release is a draft here, so --clobber is safe on a rerun.
+          gh release upload "$TAG" dist/* --clobber
+          # Publishing creates the tag and locks the tag and the assets.
+          gh release edit "$TAG" --draft=false --latest

@@ -26,19 +26,25 @@ cabal build -w ghc-9.14.1 && tests/run.sh "$(cabal list-bin -w ghc-9.14.1 cabal-
 
 The acceptance check for the JSON plan is to compare it with cabal-install 3.14.2's plans for `network` and `shake`. These are embedded in `../timbuktu/examples/plan/{network,shake}/BUCK` and were made with GHC 9.12.2 and `--index-state 2026-06-01T00:00:00Z`. Compare by package, version, component, flags and dependency edges; configured units have no unit id by design. Run against a copy of the Hackage index (`--index <copy>/01-index.tar`), never the one in `~/.cache/cabal`.
 
-CI (`.github/workflows/ci.yml`) has three stages. Released binaries must be exactly the tested ones, so nothing is rebuilt after `build`:
+CI (`.github/workflows/ci.yml`) has these jobs. Released binaries must be exactly the tested ones, so nothing is rebuilt after `build`:
 - **build**: builds with GHC 9.12.2 and 9.14.1 (cabal 3.18.1.0) for x86_64/aarch64 Linux, x86_64/aarch64 macOS and x86_64 Windows, and uploads a stripped binary in an archive. Linux builds run on `ubuntu-22.04`, so the binaries need glibc ≥ 2.35. They link glibc, libgmp and zlib dynamically, deliberately not statically; the job fails on any other `NEEDED` library. macOS binaries may only link system libraries.
 - **test**: unpacks the archive on another runner (newer Linux) and runs `tests/run.sh` on it.
-- **release** (pushes to `main`): runs release-please. When the commit is a release, it attaches the GHC 9.14.1 archives and `SHA256SUMS` to the release.
-- **ci-result**: passes only if every build and test passed. It is the only check `main`'s ruleset requires, so the matrix can change without touching the ruleset.
+- **sdist**: `cabal sdist all`, the source distribution of every package in `cabal.project`. It contains only what the `.cabal` file lists (`extra-doc-files` etc.), not the whole checkout, so a file the package needs must be listed there.
+- **commits** (PRs only): runs git-cliff (`orhun/git-cliff-action`) with `cliff.toml` over the PR's commits, with its changelog filters turned off by `GIT_CLIFF__GIT__*` overrides, so it fails on a commit that is not conventional or whose type no commit parser knows (see below). The overrides cannot go in `cliff.toml`: the history before the first release has unconventional commits.
+- **ci-ok**: fails if any of `build`, `test`, `sdist` or `commits` failed or was cancelled. It is the only check `main`'s ruleset requires, so the matrix can change without touching the ruleset. Keep its `if: always()`: without it a failure makes it skipped, which counts as passed.
+- **release** (pushes to `main`, in the `release` environment): runs only when the head commit's subject starts with `chore(release): `, and fails unless it is `chore(release): VERSION` with VERSION from the `.cabal` file. It creates a draft release, uploads the GHC `RELEASE_GHC` (9.14.1) archives and the source distributions of this run with `SHA256SUMS`, attests them, and publishes the release with the matching `CHANGELOG.md` section as notes. Publishing creates the tag `vVERSION`. A rerun continues a draft, or does nothing once the release is published. Releases are immutable.
 
-`main` is protected by a ruleset: no deletion or force push, changes only through PRs merged by rebase (linear history, no approvals needed), and `CI result` must pass. Repository admins can bypass it in PRs only, which is how release-please's PRs are merged: they are opened with `GITHUB_TOKEN`, so CI does not run on them. Tags `v*` cannot be moved or deleted.
+`main` is protected by a ruleset: no deletion or force push, changes only through PRs merged by rebase (linear history, no approvals needed), and `ci-ok` must pass. Repository admins can bypass it in PRs only. Every action is pinned to a full commit SHA with the version in a comment; Dependabot updates the pins.
 
 `cabal.project` pins `index-state`; bump it deliberately.
 
 ### Commits and releases
 
-Commit messages follow Conventional Commits (`feat:`, `fix:`, `feat!:`, `docs:`, `ci:`, …). release-please uses them to pick the next version and write `CHANGELOG.md`. Versions are SemVer (`0.1.0`), not PVP. The `version:` field in the `.cabal` file sits between `x-release-please-start-version` / `x-release-please-end` comments, and release-please updates it in its release PR; don't edit it, `CHANGELOG.md` or `.release-please-manifest.json` by hand. Before 1.0, `feat:` and breaking changes (`!`) both bump the minor version.
+Commit messages follow Conventional Commits. The types are `feat`, `fix`, `perf`, `docs`, `ci`, `test`, `refactor`, `build`, `chore`, `style` and `revert`; `!` or a `BREAKING CHANGE:` footer marks a breaking change. The allowed types are the commit parsers in `cliff.toml`; to allow a new type, add a parser. The `commits` CI job enforces this; jj runs no git hooks.
+
+Versions follow the PVP with four components, `A.B.C.D` (for example `0.1.0.0`); never turn a version into three components. git-cliff bumps `B.C.D` as SemVer would (`[bump]` in `cliff.toml`): a breaking change bumps `B`, `feat` bumps `C`, `fix`/`perf` bump `D`, and other types make no release; there is no special rule below 1.0. `A` changes only by hand. Tags are `vVERSION`. Without any tag, the first release is `[bump] initial_tag`, `v0.1.0.0`.
+
+The `version:` field in `cabal-solver-plan.cabal` is the only source of the version. Only `mise run release-pr` (`.mise/tasks/release-pr`, a zsh script) and the owner change it and `CHANGELOG.md`; don't edit either otherwise. The task takes the next version from `git cliff --bumped-version` (config: `cliff.toml`), writes it, regenerates `CHANGELOG.md` with git-cliff, and opens a PR titled `chore(release): VERSION`; merging it makes CI's `release` job publish. Don't run the task yourself: it pushes a branch and opens a PR. The release process is described for contributors in `CONTRIBUTING.md`.
 
 The repo is a jj (Jujutsu) colocated repo, so use `jj`, not `git`, for VCS operations.
 
