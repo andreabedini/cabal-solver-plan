@@ -96,12 +96,11 @@ Releases are immutable: a published version cannot change. If a release is wrong
 
 ### Release artifacts without a release
 
-Every CI run, on a pull request or started by hand, uploads everything that a release would publish as one artifact, `dist`: the same files and `SHA256SUMS`, without attestations. To get them for any branch without releasing:
+Every CI run, on a pull request or started by hand, uploads each file that a release would publish as an artifact of its own, unzipped and named after the file: the archives built with GHC 9.14.1 (`cabal-solver-plan-VERSION-TARGET.tar.gz`, `.zip` on Windows), the source distribution (`cabal-solver-plan-VERSION.tar.gz`) and `SHA256SUMS`, without attestations. The archives built with other GHCs are artifacts too, with `-ghc-GHC` before the extension, but releases leave them out. To make them for any branch without releasing, start a run and download the files from its summary page:
 
 ```
 gh workflow run ci.yml --ref BRANCH
 gh run list --workflow ci.yml --branch BRANCH --event workflow_dispatch --limit 1
-gh run download RUN_ID --name dist
 ```
 
 The `release` job runs only on a push to `main`, so a manual run never releases.

@@ -3,16 +3,17 @@ name: CI
 # build compiles the project once per target and GHC, runs its test suites,
 # and uploads the executable as an archive; test unpacks that archive on a
 # separate runner, without a build tree, and runs tests/run.sh on it; sdist
-# makes the source distribution of every package in cabal.project; dist
-# checks the versions of the tested archives and the source distributions,
-# and uploads them with SHA256SUMS as one artifact; commits checks the
-# commit messages of a PR; ci-ok is the one check that the ruleset requires;
-# release publishes dist when the head of main is a release commit, made by
-# `mise run release-pr`. Nothing is rebuilt after testing.
+# makes the source distribution of every package in cabal.project and checks
+# their versions; checksums makes SHA256SUMS of the files that a release
+# publishes; commits checks the commit messages of a PR; ci-ok is the one
+# check that the ruleset requires; release publishes the files in SHA256SUMS
+# when the head of main is a release commit, made by `mise run release-pr`.
+# Nothing is rebuilt after testing.
 #
-# A manual run (Actions > CI > Run workflow, or `gh workflow run ci.yml
-# --ref BRANCH`) makes every artifact of a release, in dist, without
-# releasing: release runs only on a push to main.
+# Every file that a release publishes is an artifact of its own, uploaded
+# without zipping and named after the file, so a manual run (Actions > CI >
+# Run workflow, or `gh workflow run ci.yml --ref BRANCH`) has them all
+# without releasing: release runs only on a push to main.
 #
 # The project has no library, so there is no documentation to build or
 # publish: no docs or pages jobs.
@@ -40,7 +41,8 @@ env:
   # Only these go into the archives; other executables in the project are
   # built and tested but not published.
   EXECUTABLES: cabal-solver-plan
-  # Archives are ARCHIVE_NAME-VERSION-TARGET.tar.gz (.zip on Windows).
+  # Archives are ARCHIVE_NAME-VERSION-TARGET.tar.gz (.zip on Windows), with
+  # -ghc-GHC before the extension for a GHC other than RELEASE_GHC.
   ARCHIVE_NAME: cabal-solver-plan
   # Any package's .cabal file: every package has the version of the release.
   VERSION_FROM: cabal-solver-plan.cabal
@@ -119,7 +121,18 @@ jobs:
             cp "$(cabal list-bin "exe:$exe")" out/
           done
           version=$(sed -nE 's/^version:[[:space:]]+//p' "$VERSION_FROM")
-          echo "ARCHIVE=$ARCHIVE_NAME-$version-${{ matrix.target }}" >> "$GITHUB_ENV"
+          archive=$ARCHIVE_NAME-$version-${{ matrix.target }}
+          # Archives of the other GHCs are tested but not released, and need
+          # names of their own.
+          if [[ ${{ matrix.ghc }} != "$RELEASE_GHC" ]]; then
+            archive=$archive-ghc-${{ matrix.ghc }}
+          fi
+          if [[ $RUNNER_OS == Windows ]]; then
+            archive=$archive.zip
+          else
+            archive=$archive.tar.gz
+          fi
+          echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
 
       # "No tests to run" when the project has no test suites.
       - name: Test
@@ -168,17 +181,18 @@ jobs:
       - name: Archive
         if: runner.os != 'Windows'
         working-directory: out
-        run: tar -czf "../$ARCHIVE.tar.gz" $EXECUTABLES
+        run: tar -czf "../$ARCHIVE" $EXECUTABLES
 
       - name: Archive
         if: runner.os == 'Windows'
         working-directory: out
-        run: 7z a "../$ARCHIVE.zip" ./*.exe
+        run: 7z a "../$ARCHIVE" ./*.exe
 
+      # Not zipped: the artifact is the archive, with the archive's name.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ matrix.target }}-ghc-${{ matrix.ghc }}
-          path: ${{ env.ARCHIVE }}.*
+          path: ${{ env.ARCHIVE }}
+          archive: false
           if-no-files-found: error
 
   test:
@@ -190,10 +204,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The archive of this target and GHC, whatever its version.
+      # Every artifact is one file, uploaded unzipped. Without
+      # skip-decompress, download-artifact would unzip the Windows archive.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ${{ matrix.target }}-ghc-${{ matrix.ghc }}
+          pattern: >-
+            ${{ matrix.ghc == env.RELEASE_GHC
+                && format('{0}-*-{1}.*', env.ARCHIVE_NAME, matrix.target)
+                || format('{0}-*-{1}-ghc-{2}.*', env.ARCHIVE_NAME, matrix.target, matrix.ghc) }}
           path: artifact
+          merge-multiple: true
+          skip-decompress: true
 
       - name: Unpack
         if: runner.os != 'Windows'
@@ -224,10 +246,13 @@ jobs:
   # The source distributions of every package in cabal.project, as cabal
   # sdist makes them: only the files that the .cabal files list, unlike a
   # checkout of the repository. cabal sdist needs no GHC and its tarballs
-  # are reproducible.
+  # are reproducible. Every package has the same version, the version of the
+  # release.
   sdist:
     name: sdist
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -240,10 +265,27 @@ jobs:
       - name: Make source distributions
         run: cabal sdist all -o sdist
 
+      - name: Check versions
+        id: check
+        run: |
+          tarballs=(sdist/*.tar.gz)
+          if (( ${#tarballs[@]} != 1 )); then
+            echo "::error::Expected one package, found ${#tarballs[@]}: add an upload step for each"
+            exit 1
+          fi
+          versions=$(for f in "${tarballs[@]}"; do f=${f##*/}; f=${f%.tar.gz}; echo "${f##*-}"; done | sort -u)
+          if [[ $(wc -l <<< "$versions") != 1 ]]; then
+            echo "::error::The packages have different versions:" $versions
+            exit 1
+          fi
+          echo "version=$versions" >> "$GITHUB_OUTPUT"
+
+      # Not zipped, so an artifact holds a single file: one upload step per
+      # package. This project has one.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: sdist
-          path: sdist/*.tar.gz
+          path: sdist/cabal-solver-plan-${{ steps.check.outputs.version }}.tar.gz
+          archive: false
           if-no-files-found: error
 
   # Every commit of a PR must follow Conventional Commits, with a type that a
@@ -271,68 +313,54 @@ jobs:
           GIT_CLIFF__GIT__REQUIRE_CONVENTIONAL: "true"
           GIT_CLIFF__GIT__FAIL_ON_UNMATCHED_COMMIT: "true"
 
-  # Everything that a release publishes, checked, in one artifact "dist":
-  # the archives built with RELEASE_GHC, the source distributions and
-  # SHA256SUMS. It runs on every event: a PR, or a manual run
-  # (workflow_dispatch, on any branch), gets the same files as a release, and
-  # a version mismatch fails before the release commit lands.
-  dist:
-    name: dist
+  # SHA256SUMS of the files that a release publishes: the source
+  # distributions and the archives built with RELEASE_GHC, all of the
+  # version of the packages. It runs on every event, so a version mismatch
+  # fails a PR rather than the release, and release publishes exactly the
+  # files that it lists.
+  checksums:
+    name: checksums
     needs: [build, test, sdist]
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.check.outputs.version }}
+    env:
+      VERSION: ${{ needs.sdist.outputs.version }}
     steps:
-      - name: Download release archives
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: '*-ghc-${{ env.RELEASE_GHC }}'
-          path: archives
-          merge-multiple: true
-
       - name: Download source distributions
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: sdist
-          path: sdist
+          pattern: '*-${{ env.VERSION }}.tar.gz'
+          path: release
+          merge-multiple: true
+          skip-decompress: true
 
-      # Every package has the same version, the version of the release, and
-      # so does everything else. No archives means that RELEASE_GHC is not
-      # in the matrix.
-      - name: Check versions
-        id: check
-        run: |
-          shopt -s nullglob
-          versions=$(for f in sdist/*.tar.gz; do f=${f##*/}; f=${f%.tar.gz}; echo "${f##*-}"; done | sort -u)
-          if [[ $(wc -l <<< "$versions") != 1 ]]; then
-            echo "::error::The packages have different versions:" $versions
-            exit 1
-          fi
-          version=$versions
-          archives=(archives/*)
-          if (( ${#archives[@]} == 0 )); then
-            echo "::error::No release archives built with GHC $RELEASE_GHC"
-            exit 1
-          fi
-          for f in "${archives[@]}"; do
-            if [[ ${f#archives/} != "$ARCHIVE_NAME-$version-"* ]]; then
-              echo "::error::$f is not an archive of version $version"
-              exit 1
-            fi
-          done
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Download archives
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: '${{ env.ARCHIVE_NAME }}-${{ env.VERSION }}-*'
+          path: archives
+          merge-multiple: true
+          skip-decompress: true
 
+      # No archives means that RELEASE_GHC is not in the matrix, or that
+      # VERSION_FROM does not have the version of the packages.
       - name: Make checksums
         run: |
-          mkdir dist
-          mv archives/* sdist/*.tar.gz dist/
-          (cd dist && sha256sum -- * > SHA256SUMS)
-          cat dist/SHA256SUMS
+          shopt -s nullglob
+          # Archives of the other GHCs are tested but not released.
+          rm -f "archives/$ARCHIVE_NAME-$VERSION-"*-ghc-*
+          archives=(archives/*)
+          if (( ${#archives[@]} == 0 )); then
+            echo "::error::No archives of version $VERSION built with GHC $RELEASE_GHC"
+            exit 1
+          fi
+          mv "${archives[@]}" release/
+          (cd release && sha256sum -- * > SHA256SUMS)
+          cat release/SHA256SUMS
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: dist
-          path: dist/*
+          path: release/SHA256SUMS
+          archive: false
           if-no-files-found: error
 
   # The one check that the ruleset requires: whatever the matrix becomes, it
@@ -342,19 +370,19 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [build, test, sdist, dist, commits]
+    needs: [build, test, sdist, checksums, commits]
     runs-on: ubuntu-latest
     steps:
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1
 
-  # Publishes the dist artifact as a release when the head of main is a
-  # release commit ("chore(release): VERSION"), and never on a PR or a manual
-  # run. It is idempotent: a rerun continues a draft, or does nothing if the
-  # release is published.
+  # Publishes the files in SHA256SUMS, and SHA256SUMS, as a release when the
+  # head of main is a release commit ("chore(release): VERSION"), and never
+  # on a PR or a manual run. It is idempotent: a rerun continues a draft, or
+  # does nothing if the release is published.
   release:
     name: release
-    needs: [ci-ok, dist]
+    needs: [ci-ok, sdist]
     # The implicit success() would also look at commits, which is skipped on
     # pushes, and so skip this job too. Check ci-ok's result instead.
     if: >-
@@ -377,7 +405,7 @@ jobs:
         id: plan
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.dist.outputs.version }}
+          VERSION: ${{ needs.sdist.outputs.version }}
         run: |
           subject=$(git log -1 --format=%s)
           # A squash merge appends " (#123)" to the subject.
@@ -393,17 +421,29 @@ jobs:
             echo "state=$state"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Download dist
+      - name: Download artifacts
         if: steps.plan.outputs.state != 'published'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: dist
-          path: dist
+          path: artifacts
+          merge-multiple: true
+          skip-decompress: true
+
+      # The files that SHA256SUMS lists, checked, and SHA256SUMS.
+      - name: Select the release files
+        if: steps.plan.outputs.state != 'published'
+        run: |
+          mkdir dist
+          cd artifacts
+          sha256sum --check SHA256SUMS
+          mapfile -t files < <(awk '{print $2}' SHA256SUMS)
+          mv -- "${files[@]}" SHA256SUMS ../dist/
+          ls -l ../dist
 
       - name: Release notes
         if: steps.plan.outputs.state != 'published'
         env:
-          VERSION: ${{ needs.dist.outputs.version }}
+          VERSION: ${{ needs.sdist.outputs.version }}
         run: |
           awk -v v="$VERSION" '/^## /{p = index($0, "[" v "]") > 0; next} p' CHANGELOG.md > NOTES.md
           if [ ! -s NOTES.md ]; then
