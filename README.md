@@ -30,15 +30,36 @@ It does not:
 
 ## Install
 
-Download an archive for your platform from the [releases](https://github.com/andreabedini/cabal-solver-plan/releases) and unpack it. There are binaries for x86_64 and aarch64 Linux, x86_64 and aarch64 macOS, and x86_64 Windows. Each release also has the source distribution, `cabal-solver-plan-VERSION.tar.gz`, and `SHA256SUMS` with the checksums of all of them.
+### Pre-built binaries
+
+Download the archive for your platform from the [latest release](https://github.com/andreabedini/cabal-solver-plan/releases/latest) and unpack it. It contains the `cabal-solver-plan` executable. There are archives for x86_64 and aarch64 Linux, x86_64 and aarch64 macOS, and x86_64 Windows.
 
 - Linux binaries need glibc 2.34 or newer (e.g. Ubuntu 22.04, Debian 12, RHEL 9), libgmp and zlib.
 - macOS binaries are not notarised. Remove the quarantine attribute before running one: `xattr -d com.apple.quarantine cabal-solver-plan`.
 
-Or build it with GHC 9.12 or 9.14:
+Each release also has `SHA256SUMS`, and a GitHub attestation for every file. To check an archive:
 
 ```
-cabal build -w ghc-9.14.1
+sha256sum --check --ignore-missing SHA256SUMS
+gh attestation verify ARCHIVE --repo andreabedini/cabal-solver-plan
+```
+
+### With mise
+
+[mise](https://mise.jdx.dev/) installs the release archive for your platform with its [GitHub backend](https://mise.jdx.dev/dev-tools/backends/github.html), and checks its checksum and attestation:
+
+```
+mise use -g github:andreabedini/cabal-solver-plan
+```
+
+Add `@VERSION` to pin a version, for example `github:andreabedini/cabal-solver-plan@0.1.0.0`. Without `-g`, the tool is added to the current project's `mise.toml`.
+
+### From source
+
+Each release has the source distribution, `cabal-solver-plan-VERSION.tar.gz`. With GHC 9.12 or 9.14 and cabal, unpack it and run, in its directory:
+
+```
+cabal install
 ```
 
 Run `cabal-solver-plan --help` for all options.

@@ -4,3 +4,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # The commits CI job accepts only Conventional Commits with a type that
+    # cliff.toml knows, so the commits are "ci(deps): bump ...". ci does not
+    # make a release.
+    commit-message:
+      prefix: ci
+      include: scope
+    # One PR a week for all the actions.
+    groups:
+      actions:
+        patterns:
+          - "*"

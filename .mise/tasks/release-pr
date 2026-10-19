@@ -1,9 +1,6 @@
 #!/usr/bin/env zsh
-#MISE description="Open a release PR: bump the .cabal version and regenerate CHANGELOG.md"
+#MISE description="Open a release PR: bump the package versions and regenerate CHANGELOG.md"
 setopt err_exit no_unset pipe_fail
-
-cabal=( *.cabal(N) )
-(( $#cabal == 1 )) || { print -u2 "error: expected exactly one .cabal file"; exit 1 }
 
 # git-cliff reads release tags from git. jj does not need them, so fetch them with git.
 git fetch --tags --quiet origin
@@ -11,6 +8,12 @@ jj git fetch
 # Start a new change on top of main. In a colocated repo, git HEAD is now main@origin,
 # so git-cliff reads the history of main and not of the current work.
 jj new 'main@origin'
+
+fail() {
+  print -u2 "error: $1"
+  jj abandon @
+  exit 1
+}
 
 # Commits that cliff.toml skips are not in the context.
 releasable=$(git cliff --unreleased --context | jq '(.[0].commits // []) | length')
@@ -24,14 +27,35 @@ fi
 # [bump] initial_tag from cliff.toml if there is no tag yet.
 next=$(git cliff --bumped-version)
 next=${next#v}
-if [[ $next != <->.<->.<->.<-> ]]; then
-  print -u2 "error: next version $next is not A.B.C.D"
-  jj abandon @
-  exit 1
-fi
+[[ $next == <->.<->.<->.<-> ]] || fail "next version $next is not A.B.C.D"
 
-sed -i -E "s/^(version:[[:space:]]+).*/\1$next/" $cabal[1]
+# Every package in cabal.project has the version of the release. cabal sdist
+# names each tarball NAME-VERSION.tar.gz, and --list-only lists the files of
+# every package, its .cabal file among them.
+sdist=$(mktemp -d)
+cabal sdist all -o $sdist >/dev/null
+files=( ${(f)"$(cabal sdist all --list-only)"} )
+cabals=()
+for tarball in $sdist/*.tar.gz; do
+  name=${${tarball:t}%-*}
+  matches=( ${(M)files:#(*/|)$name.cabal} )
+  (( $#matches == 1 )) || fail "cannot tell which file is $name.cabal: ${(j:, :)matches}"
+  cabals+=( ${matches[1]#./} )
+done
+rm -rf $sdist
+(( $#cabals > 0 )) || fail "cabal sdist found no packages"
+
+for cabal in $cabals; do
+  sed -i -E "s/^(version:[[:space:]]+).*/\1$next/" $cabal
+done
+
+# CHANGELOG.md at the top is the one the release notes come from. A package
+# in a subdirectory cannot list ../CHANGELOG.md in extra-doc-files, so it gets
+# a copy.
 git cliff --tag "v$next" -o CHANGELOG.md
+for cabal in ${(M)cabals:#*/*}; do
+  cp CHANGELOG.md ${cabal:h}/CHANGELOG.md
+done
 
 jj describe -m "chore(release): $next"
 jj bookmark create "release-$next" -r @
